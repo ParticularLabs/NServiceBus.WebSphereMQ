@@ -114,13 +114,13 @@
         private void Action(object obj)
         {
             var cancellationToken = (CancellationToken) obj;
-            
+
             while (!cancellationToken.IsCancellationRequested)
             {
                 using (var session = connection.CreateSession(transactionSettings.IsTransactional,
-                                                           transactionSettings.IsTransactional
-                                                               ? AcknowledgeMode.AutoAcknowledge
-                                                               : AcknowledgeMode.DupsOkAcknowledge))
+                                                              transactionSettings.IsTransactional
+                                                                  ? AcknowledgeMode.AutoAcknowledge
+                                                                  : AcknowledgeMode.DupsOkAcknowledge))
                 using (var destination = session.CreateQueue(endpointAddress.Queue))
                 using (var consumer = session.CreateConsumer(destination))
                 {
@@ -129,40 +129,57 @@
 
                     try
                     {
-                        if (MessageSender != null)
+                        if (transactionSettings.IsTransactional)
                         {
-                            MessageSender.SetSession(session);
-                        }
+                            if (MessageSender != null)
+                            {
+                                MessageSender.SetSession(session);
+                            }
 
-                        if (transactionSettings.IsTransactional && !transactionSettings.DontUseDistributedTransactions)
-                        {
-                            using (var scope = new TransactionScope(TransactionScopeOption.Required, transactionOptions))
+                            if (!transactionSettings.DontUseDistributedTransactions) //Using distributed transactions
+                            {
+                                using (var scope = new TransactionScope(TransactionScopeOption.Required, transactionOptions))
+                                {
+                                    message = consumer.Receive(1000);
+
+                                    if (message == null)
+                                    {
+                                        scope.Complete();
+                                        continue;
+                                    }
+
+                                    if (ProcessMessage(message))
+                                    {
+                                        scope.Complete();
+                                    }
+                                }
+                            }
+                            else // Using Local transactions
                             {
                                 message = consumer.Receive(1000);
 
                                 if (message == null)
                                 {
-                                    scope.Complete();
                                     continue;
                                 }
 
                                 if (ProcessMessage(message))
                                 {
-                                    scope.Complete();
+                                    session.Commit();
                                 }
                             }
-
-                            continue;
                         }
-
-                        message = consumer.Receive(1000);
-
-                        if (message == null)
+                        else // No transaction at all
                         {
-                            continue;
-                        }
+                            message = consumer.Receive(1000);
 
-                        ProcessMessage(message);
+                            if (message == null)
+                            {
+                                continue;
+                            }
+
+                            ProcessMessage(message);
+                        }
                     }
                     catch (Exception ex)
                     {

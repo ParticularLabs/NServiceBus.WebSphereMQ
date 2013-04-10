@@ -61,7 +61,7 @@
                     var mqMessage = session.CreateBytesMessage();
                     mqMessage.WriteBytes(message.Body);
                     mqMessage.JMSMessageID = message.Id;
-
+                    
                     if (!string.IsNullOrEmpty(message.CorrelationId))
                     {
                         mqMessage.JMSCorrelationID = message.CorrelationId;
