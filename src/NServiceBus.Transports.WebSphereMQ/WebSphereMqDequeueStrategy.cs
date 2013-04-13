@@ -19,9 +19,10 @@
 
     public class WebSphereMqDequeueStrategy : IDequeueMessages
     {
-        public WebSphereMqDequeueStrategy(WebSphereMqConnectionFactory factory)
+        public WebSphereMqDequeueStrategy(WebSphereMqConnectionFactory factory, SubscriptionsConsumer subscriptionsConsumer)
         {
             this.factory = factory;
+            this.subscriptionsConsumer = subscriptionsConsumer;
         }
 
         /// <summary>
@@ -39,13 +40,32 @@
         /// </summary>
         public WebSphereMqMessageSender MessageSender { get; set; }
 
-        public void Init(Address address, TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage, Action<string, Exception> endProcessMessage)
+        public void SetCreateMessageConsumer(Func<ISession, IMessageConsumer> createConsumer)
+        {
+            this.createConsumer = createConsumer;
+        }
+ 
+        public void Init(Address address, TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
+                         Action<string, Exception> endProcessMessage)
         {
             this.tryProcessMessage = tryProcessMessage;
             this.endProcessMessage = endProcessMessage;
             endpointAddress = address;
             transactionSettings = settings;
-            transactionOptions = new TransactionOptions { IsolationLevel = transactionSettings.IsolationLevel, Timeout = transactionSettings.TransactionTimeout };
+            transactionOptions = new TransactionOptions
+                {
+                    IsolationLevel = transactionSettings.IsolationLevel,
+                    Timeout = transactionSettings.TransactionTimeout
+                };
+
+            createConsumer = (session) => session.CreateConsumer(session.CreateQueue(address.Queue));
+            
+            if (subscriptionsConsumer != null)
+            {
+                subscriptionsConsumer.TransactionSettings = transactionSettings;
+                subscriptionsConsumer.TryProcessMessage = tryProcessMessage;
+                subscriptionsConsumer.EndProcessMessage = endProcessMessage;
+            }
         }
 
         public void Start(int maximumConcurrencyLevel)
@@ -56,13 +76,30 @@
             }
 
             scheduler = new MTATaskScheduler(maximumConcurrencyLevel,
-                                             String.Format("NServiceBus Dequeuer Worker Thread for [{0}]", endpointAddress));
+                                             String.Format("NServiceBus Dequeuer Worker Thread for [{0}]", endpointAddress.Queue));
 
             connection = factory.CreateConnection();
 
-            for (int i = 0; i < maximumConcurrencyLevel; i++)
+            for (var i = 0; i < maximumConcurrencyLevel; i++)
             {
                 StartConsumer();
+            }
+
+            if (subscriptionsConsumer != null)
+            {
+                subscriptionsConsumer.Start(maximumConcurrencyLevel);
+            }
+        }
+
+        public void Stop()
+        {
+            Logger.Debug(String.Format("NServiceBus Dequeuer Worker Thread for [{0}] stop called.", endpointAddress.Queue));
+            tokenSource.Cancel();
+            scheduler.Dispose();
+
+            if (subscriptionsConsumer != null)
+            {
+                subscriptionsConsumer.Stop();
             }
         }
 
@@ -88,7 +125,7 @@
                 }
                 catch (PCFException ex)
                 {
-                    Logger.Warn(string.Format("Could not purge queue ({0}) at startup", endpointAddress), ex);
+                    Logger.Warn(string.Format("Could not purge queue ({0}) at startup", endpointAddress.Queue), ex);
                 }
             }
         }
@@ -121,8 +158,7 @@
                                                               transactionSettings.IsTransactional
                                                                   ? AcknowledgeMode.AutoAcknowledge
                                                                   : AcknowledgeMode.DupsOkAcknowledge))
-                using (var destination = session.CreateQueue(endpointAddress.Queue))
-                using (var consumer = session.CreateConsumer(destination))
+                using (var consumer = createConsumer(session))
                 {
                     Exception exception = null;
                     IMessage message = null;
@@ -253,13 +289,6 @@
             return result;
         }
 
-        public void Stop()
-        {
-            Logger.Debug(String.Format("NServiceBus Dequeuer Worker Thread for [{0}] stop called.", endpointAddress));
-            tokenSource.Cancel();
-            scheduler.Dispose();
-        }
-
         IConnection connection;
         DateTime minimumJmsDate = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         readonly CircuitBreaker circuitBreaker = new CircuitBreaker(100, TimeSpan.FromSeconds(30));
@@ -272,6 +301,8 @@
         TransactionOptions transactionOptions;
         Action<string, Exception> endProcessMessage;
         readonly WebSphereMqConnectionFactory factory;
+        private readonly SubscriptionsConsumer subscriptionsConsumer;
         static readonly JsonMessageSerializer Serializer = new JsonMessageSerializer(null);
+        private Func<ISession, IMessageConsumer> createConsumer = null;
     }
 }

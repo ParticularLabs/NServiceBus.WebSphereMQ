@@ -19,9 +19,15 @@
 
             var connectionManager = new WebSphereMqConnectionFactory(settings);
 
-            config.Configurer.RegisterSingleton<WebSphereMqConnectionFactory>(connectionManager);                
-            
+            config.Configurer.RegisterSingleton<WebSphereMqConnectionFactory>(connectionManager);
+
             config.Configurer.ConfigureComponent<WebSphereMqMessageSender>(DependencyLifecycle.InstancePerCall);
+
+            config.Configurer.ConfigureComponent<WebSphereMqSubscriptionsManager>(DependencyLifecycle.SingleInstance);
+
+            config.Configurer.ConfigureComponent<SubscriptionsConsumer>(DependencyLifecycle.InstancePerCall);
+
+            config.Configurer.ConfigureComponent<WebSphereMqMessagePublisher>(DependencyLifecycle.InstancePerCall);
 
             config.Configurer.ConfigureComponent<WebSphereMqQueueCreator>(DependencyLifecycle.InstancePerCall)
                 .ConfigureProperty(p => p.Settings, settings);
@@ -30,7 +36,7 @@
                 .ConfigureProperty(p => p.PurgeOnStartup, ConfigurePurging.PurgeRequested)
                 .ConfigureProperty(p => p.Settings, settings);
             
-            //config.Configurer.ConfigureComponent<NoConfigRequiredAutoSubscriptionStrategy>(DependencyLifecycle.InstancePerCall);
+            config.Configurer.ConfigureComponent<NoConfigRequiredAutoSubscriptionStrategy>(DependencyLifecycle.InstancePerCall);
 
             EndpointInputQueueCreator.Enabled = true;
         }

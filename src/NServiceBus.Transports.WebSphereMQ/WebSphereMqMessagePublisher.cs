@@ -2,7 +2,7 @@
 {
     using System;
     using System.Collections.Generic;
-    using System.Linq;
+
 
     public class WebSphereMqMessagePublisher : IPublishMessages
     {
@@ -15,11 +15,9 @@
 
         public bool Publish(TransportMessage message, IEnumerable<Type> eventTypes)
         {
-            var eventType = eventTypes.First(); //we route on the first event for now
+            var eventTypeTopics = String.Join("/", eventTypes);
 
-            var topic = TopicNameCreator.GetName(eventType);
-
-            messageSender.Send(message, Address.Parse(String.Format("topic://{0}", topic)));
+            messageSender.Send(message, Address.Parse(String.Format("topic://{0}/EVENTS/{1}", Address.Local.Queue, eventTypeTopics)));
 
             return true;
         }

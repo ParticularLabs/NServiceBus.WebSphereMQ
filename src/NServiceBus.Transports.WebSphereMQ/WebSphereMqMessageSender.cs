@@ -53,7 +53,16 @@
 
             try
             {
-                var destination = session.CreateQueue(address.Queue);
+                IDestination destination;
+
+                if (address.Queue.StartsWith("topic://"))
+                {
+                    destination = session.CreateTopic(address.Queue);
+                }
+                else
+                {
+                    destination = session.CreateQueue(address.Queue);
+                }
 
                 using (destination)
                 using (var producer = session.CreateProducer(destination))
