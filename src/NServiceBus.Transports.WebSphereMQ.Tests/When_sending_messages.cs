@@ -46,25 +46,19 @@
             tm.Headers.Add(Headers.ContentType, "text/xml");
 
             var subscriptionsManager = new WebSphereMqSubscriptionsManager();
-            SubscriptionsConsumer consumer = new SubscriptionsConsumer(subscriptionsManager);
-            consumer.Factory = webSphereMqConnectionFactory;
-            consumer.Settings = settings;
-            consumer.MessageSender = new WebSphereMqMessageSender(webSphereMqConnectionFactory);
-            consumer.TransactionSettings = new TransactionSettings {IsTransactional = true};
-            consumer.TryProcessMessage = message =>
+            subscriptionsManager.Init(new TransactionSettings(), message =>
                 {
                     Console.Out.WriteLine("Event received, with correlationid={0}", message.CorrelationId);
                     return true;
-                };
-            consumer.EndProcessMessage = (s, exception) =>
+                }, (s, exception) =>
                 {
                     Console.Out.WriteLine("EndProcessMessage");
                     manualResetEvent.Set();
-                };
+                });
 
             subscriptionsManager.Subscribe(typeof(MyType), Address.Local);
 
-            consumer.Start(1);
+            subscriptionsManager.Start(1);
 
             WebSphereMqMessagePublisher publisher = new WebSphereMqMessagePublisher(new WebSphereMqMessageSender(webSphereMqConnectionFactory));
 
@@ -75,7 +69,7 @@
             }
 
             manualResetEvent.WaitOne();
-            consumer.Stop();
+            subscriptionsManager.Stop();
         }
 
         public class MyType { }
@@ -164,9 +158,8 @@
             tm2.Recoverable = true;
             tm2.Headers.Add(Headers.ContentType, "text/xml");
 
-            WebSphereMqDequeueStrategy dequeuer = new WebSphereMqDequeueStrategy(webSphereMqConnectionFactory, new SubscriptionsConsumer(new WebSphereMqSubscriptionsManager()));
             WebSphereMqMessageSender sender = new WebSphereMqMessageSender(webSphereMqConnectionFactory);
-            dequeuer.MessageSender = sender;
+            WebSphereMqDequeueStrategy dequeuer = new WebSphereMqDequeueStrategy(new WebSphereMqSubscriptionsManager(), new MessageReceiver(webSphereMqConnectionFactory, sender));
 
             var address = Address.Parse("Boo");
             ManualResetEvent manualResetEvent = new ManualResetEvent(false);

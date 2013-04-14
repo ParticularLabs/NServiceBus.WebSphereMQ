@@ -40,11 +40,11 @@
     </Reference>
     <Reference Include="NServiceBus, Version=4.0.0.0, Culture=neutral, PublicKeyToken=9fc386479f8a226c, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\packages\NServiceBus.Interfaces.4.0.0-unstable2918\lib\net40\NServiceBus.dll</HintPath>
+      <HintPath>..\packages\NServiceBus.Interfaces.4.0.0-unstable2940\lib\net40\NServiceBus.dll</HintPath>
     </Reference>
     <Reference Include="NServiceBus.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=9fc386479f8a226c, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\packages\NServiceBus.4.0.0-unstable2918\lib\net40\NServiceBus.Core.dll</HintPath>
+      <HintPath>..\packages\NServiceBus.4.0.0-unstable2940\lib\net40\NServiceBus.Core.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -58,8 +58,7 @@
     <Compile Include="Config\WebSphereMqTransportConfigurer.cs" />
     <Compile Include="Config\WebSphereMQ.cs" />
     <Compile Include="Constants.cs" />
-    <Compile Include="SubscriptionsConsumer.cs" />
-    <Compile Include="TopicNameCreator.cs" />
+    <Compile Include="MessageReceiver.cs" />
     <Compile Include="WebSphereMqConnectionFactory.cs" />
     <Compile Include="WebSphereMqConnectionStringBuilder.cs" />
     <Compile Include="WebSphereMqDequeueStrategy.cs" />

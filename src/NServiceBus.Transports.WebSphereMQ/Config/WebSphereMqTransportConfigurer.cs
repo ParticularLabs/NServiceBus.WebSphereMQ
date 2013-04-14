@@ -13,6 +13,8 @@
 
         protected override void InternalConfigure(Configure config, string connectionString)
         {
+            Address.IgnoreMachineName();
+
             var parser = new WebSphereMqConnectionStringBuilder(connectionString);
 
             var settings = parser.RetrieveSettings();
@@ -25,7 +27,7 @@
 
             config.Configurer.ConfigureComponent<WebSphereMqSubscriptionsManager>(DependencyLifecycle.SingleInstance);
 
-            config.Configurer.ConfigureComponent<SubscriptionsConsumer>(DependencyLifecycle.InstancePerCall);
+            config.Configurer.ConfigureComponent<MessageReceiver>(DependencyLifecycle.InstancePerCall);
 
             config.Configurer.ConfigureComponent<WebSphereMqMessagePublisher>(DependencyLifecycle.InstancePerCall);
 

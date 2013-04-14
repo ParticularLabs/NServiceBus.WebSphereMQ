@@ -5,6 +5,7 @@
     using System.Threading;
     using System.Transactions;
     using IBM.XMS;
+    using Logging;
     using Serializers.Json;
     using Settings;
 
@@ -15,6 +16,7 @@
         private readonly bool transactionsEnabled;
         private readonly ThreadLocal<ISession> currentSession = new ThreadLocal<ISession>();
         private static readonly JsonMessageSerializer Serializer = new JsonMessageSerializer(null);
+        static readonly ILog Logger = LogManager.GetLogger(typeof(WebSphereMqMessageSender));
 
         public WebSphereMqMessageSender(WebSphereMqConnectionFactory factory)
         {
@@ -45,7 +47,7 @@
             }
             else
             {
-                session = connection.CreateSession(transactionsEnabled && (Transaction.Current != null),
+                session = connection.CreateSession(transactionsEnabled,
                                                    transactionsEnabled
                                                        ? AcknowledgeMode.AutoAcknowledge
                                                        : AcknowledgeMode.DupsOkAcknowledge);
@@ -53,24 +55,21 @@
 
             try
             {
-                IDestination destination;
-
-                if (address.Queue.StartsWith("topic://"))
-                {
-                    destination = session.CreateTopic(address.Queue);
-                }
-                else
-                {
-                    destination = session.CreateQueue(address.Queue);
-                }
+                var isTopic = IsTopic(address);
+                var destination = isTopic ? session.CreateTopic(address.Queue) : session.CreateQueue(address.Queue);
 
                 using (destination)
                 using (var producer = session.CreateProducer(destination))
                 {
                     var mqMessage = session.CreateBytesMessage();
-                    mqMessage.WriteBytes(message.Body);
+
                     mqMessage.JMSMessageID = message.Id;
-                    
+
+                    if (message.Body != null)
+                    {
+                        mqMessage.WriteBytes(message.Body);
+                    }
+
                     if (!string.IsNullOrEmpty(message.CorrelationId))
                     {
                         mqMessage.JMSCorrelationID = message.CorrelationId;
@@ -102,10 +101,19 @@
 
                     if (message.ReplyToAddress != null && message.ReplyToAddress != Address.Undefined)
                     {
-                        mqMessage.JMSReplyTo = session.CreateQueue(message.ReplyToAddress.Queue);
+                        mqMessage.JMSReplyTo = isTopic ? session.CreateTopic(message.ReplyToAddress.Queue) : session.CreateQueue(message.ReplyToAddress.Queue);
                     }
 
                     producer.Send(mqMessage);
+                    Logger.DebugFormat(isTopic ? "Message published to {0}." : "Message sent to {0}.", address.Queue);
+
+                    if (!currentSession.IsValueCreated)
+                    {
+                        if (transactionsEnabled && Transaction.Current == null)
+                        {
+                            session.Commit();
+                        }
+                    }
                 }
             }
             finally
@@ -116,6 +124,11 @@
                     session.Dispose();
                 }
             }
+        }
+
+        static bool IsTopic(Address address)
+        {
+            return address.Queue.StartsWith("topic://");
         }
     }
 }

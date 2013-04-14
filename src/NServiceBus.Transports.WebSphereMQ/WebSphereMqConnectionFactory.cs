@@ -74,13 +74,12 @@
                 cf.SetIntProperty(XMSC.WMQ_CONNECTION_MODE, XMSC.WMQ_CM_CLIENT);
                 cf.SetStringProperty(XMSC.WMQ_QUEUE_MANAGER, settings.QueueManager);
                 //cf.SetIntProperty(XMSC.WMQ_CLIENT_RECONNECT_OPTIONS, XMSC.WMQ_CLIENT_RECONNECT);
-                //cf.SetStringProperty(XMSC.WPM_DUR_SUB_HOME, "");
 
                 var clientId = String.Format("NServiceBus-{0}-{1}", Address.Local, Configure.DefineEndpointVersionRetriever());
                 cf.SetStringProperty(XMSC.CLIENT_ID, clientId);
 
                 connection = cf.CreateConnection();
-
+                
                 if (!SettingsHolder.Get<bool>("Endpoint.SendOnly"))
                 {
                     connection.Start();
