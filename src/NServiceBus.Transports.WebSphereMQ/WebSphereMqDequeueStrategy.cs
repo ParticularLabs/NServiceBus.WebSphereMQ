@@ -39,7 +39,7 @@
                 webSphereMqSubscriptionsManager.Init(settings, tryProcessMessage, endProcessMessage);
             }
 
-            messageReceiver.Init(address, settings, tryProcessMessage, endProcessMessage);
+            messageReceiver.Init(address, settings, tryProcessMessage, endProcessMessage, session => session.CreateConsumer(session.CreateQueue(endpointAddress.Queue)));
         }
 
         public void Start(int maximumConcurrencyLevel)

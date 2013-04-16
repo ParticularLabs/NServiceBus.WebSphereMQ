@@ -12,9 +12,11 @@
     using Logging;
     using Serializers.Json;
     using Unicast.Transport;
+    using Utils;
 
     public class MessageReceiver
     {
+        private const int MaximumDelay = 1000;
         private static readonly JsonMessageSerializer Serializer = new JsonMessageSerializer(null);
         private static readonly ILog Logger = LogManager.GetLogger(typeof (WebSphereMqDequeueStrategy));
         private readonly CircuitBreaker circuitBreaker = new CircuitBreaker(100, TimeSpan.FromSeconds(30));
@@ -22,6 +24,7 @@
         private readonly WebSphereMqMessageSender messageSender;
         private readonly CancellationTokenSource tokenSource = new CancellationTokenSource();
         private IConnection connection;
+        private Func<ISession, IMessageConsumer> createConsumer;
         private Action<string, Exception> endProcessMessage;
         private Address endpointAddress;
         private DateTime minimumJmsDate = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -37,12 +40,13 @@
         }
 
         public void Init(Address address, TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
-                         Action<string, Exception> endProcessMessage)
+                         Action<string, Exception> endProcessMessage, Func<ISession, IMessageConsumer> createConsumer)
         {
             endpointAddress = address;
             this.settings = settings;
             this.tryProcessMessage = tryProcessMessage;
             this.endProcessMessage = endProcessMessage;
+            this.createConsumer = createConsumer;
 
             transactionOptions = new TransactionOptions
                 {
@@ -66,7 +70,8 @@
                 StartConsumer();
             }
 
-            Logger.InfoFormat(" MessageReceiver for [{0}] started with {1} worker threads.", endpointAddress, maximumConcurrencyLevel);
+            Logger.InfoFormat(" MessageReceiver for [{0}] started with {1} worker threads.", endpointAddress,
+                              maximumConcurrencyLevel);
         }
 
         public void Stop()
@@ -88,7 +93,10 @@
                         t.Exception.Handle(ex =>
                             {
                                 circuitBreaker.Execute(
-                                    () => Configure.Instance.RaiseCriticalError(string.Format("One of the MessageReceiver consumer threads for [{0}] crashed.", endpointAddress), ex));
+                                    () =>
+                                    Configure.Instance.RaiseCriticalError(
+                                        string.Format("One of the MessageReceiver consumer threads for [{0}] crashed.",
+                                                      endpointAddress), ex));
                                 return true;
                             });
 
@@ -96,176 +104,109 @@
                     }, TaskContinuationOptions.OnlyOnFaulted);
         }
 
-        static bool IsTopic(Address address)
-        {
-            return address.Queue.StartsWith("topic://");
-        }
-
-        const int delay = 1000;
-
         private void Action(object obj)
         {
             var cancellationToken = (CancellationToken) obj;
+            var backOff = new BackOff(MaximumDelay);
 
             while (!cancellationToken.IsCancellationRequested)
             {
-                if (settings.IsTransactional)
+                var result = new ReceiveResult();
+
+                try
                 {
-                    if (!settings.DontUseDistributedTransactions)
+                    if (settings.IsTransactional)
                     {
-                        RunInDistributedTransaction();
+                        if (!settings.DontUseDistributedTransactions)
+                        {
+                            RunInDistributedTransaction(result);
+                            continue;
+                        }
+
+                        RunInLocalTransaction(result);
                         continue;
                     }
 
-                    RunInLocalTransaction();
-                    continue;
+                    RunInNoTransaction(result);
+                }
+                catch (Exception ex)
+                {
+                    result.Exception = ex;
+                }
+                finally
+                {
+                    endProcessMessage(result.MessageId, result.Exception);
                 }
 
-                RunInNoTransaction();
+                backOff.Wait(() => result.MessageId == null);
             }
         }
 
-        private void RunInNoTransaction()
+        private void RunInNoTransaction(ReceiveResult result)
         {
-            using (var session = connection.CreateSession(false, AcknowledgeMode.DupsOkAcknowledge))
+            using (ISession session = connection.CreateSession(false, AcknowledgeMode.DupsOkAcknowledge))
             {
-                IDestination destination;
-                IMessageConsumer consumer;
-                if (IsTopic(endpointAddress))
+                using (IMessageConsumer consumer = createConsumer(session))
                 {
-                    destination = session.CreateTopic(endpointAddress.Queue);
-                    consumer = session.CreateDurableSubscriber(destination,
-                                                               endpointAddress.Queue.GetHashCode().ToString());
-                }
-                else
-                {
-                    destination = session.CreateQueue(endpointAddress.Queue);
-                    consumer = session.CreateConsumer(destination);
-                }
-                using (destination)
-                using (consumer)
-                {
-                    Exception exception = null;
-                    IMessage message = null;
+                    IMessage message = consumer.ReceiveNoWait();
+                    if (message == null)
+                    {
+                        return;
+                    }
 
-                    try
-                    {
-                        message = consumer.Receive(delay);
-                        if (message == null)
-                        {
-                            return;
-                        }
+                    result.MessageId = message.JMSMessageID;
 
-                        ProcessMessage(message);
-                    }
-                    catch (Exception ex)
-                    {
-                        exception = ex;
-                    }
-                    finally
-                    {
-                        endProcessMessage(message != null ? message.JMSMessageID : null, exception);
-                    }
+                    ProcessMessage(message);
                 }
             }
         }
 
-        private void RunInLocalTransaction()
+        private void RunInLocalTransaction(ReceiveResult result)
         {
-            using (var session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
-                {
-                    IDestination destination;
-                    IMessageConsumer consumer;
-                    if (IsTopic(endpointAddress))
-                    {
-                        destination = session.CreateTopic(endpointAddress.Queue);
-                        consumer = session.CreateDurableSubscriber(destination, endpointAddress.Queue.GetHashCode().ToString());
-                    }
-                    else
-                    {
-                        destination = session.CreateQueue(endpointAddress.Queue);
-                        consumer = session.CreateConsumer(destination);
-                    }
-                    using(destination)
-                    using (consumer)
-                    {
-                        Exception exception = null;
-                        IMessage message = null;
-
-                        try
-                        {
-                            message = consumer.Receive(delay);
-
-                            if (message == null)
-                            {
-                                return;
-                            }
-
-                            if (ProcessMessage(message))
-                            {
-                                session.Commit();
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            exception = ex;
-                        }
-                        finally
-                        {
-                            endProcessMessage(message != null ? message.JMSMessageID : null, exception);
-                        }
-                    }
-                }
-        }
-
-        private void RunInDistributedTransaction()
-        {
-            using (var scope = new TransactionScope(TransactionScopeOption.Required, transactionOptions))
-            using (var session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
+            using (ISession session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
             {
                 messageSender.SetSession(session);
 
-                IDestination destination;
-                IMessageConsumer consumer;
-                if (IsTopic(endpointAddress))
+                using (IMessageConsumer consumer = createConsumer(session))
                 {
-                    destination = session.CreateTopic(endpointAddress.Queue);
-                    consumer = session.CreateDurableSubscriber(destination,
-                                                               endpointAddress.Queue.GetHashCode().ToString());
-                }
-                else
-                {
-                    destination = session.CreateQueue(endpointAddress.Queue);
-                    consumer = session.CreateConsumer(destination);
-                }
-                using (destination)
-                using (consumer)
-                {
-                    Exception exception = null;
-                    IMessage message = null;
+                    IMessage message = consumer.ReceiveNoWait();
 
-                    try
+                    if (message == null)
                     {
-                        message = consumer.Receive(delay);
-
-                        if (message == null)
-                        {
-                            scope.Complete();
-                            return;
-                        }
-
-                        if (ProcessMessage(message))
-                        {
-                            scope.Complete();
-                        }
+                        return;
                     }
-                    catch (Exception ex)
+
+                    result.MessageId = message.JMSMessageID;
+
+                    if (ProcessMessage(message))
                     {
-                        exception = ex;
+                        session.Commit();
                     }
-                    finally
+                }
+            }
+        }
+
+        private void RunInDistributedTransaction(ReceiveResult result)
+        {
+            using (var scope = new TransactionScope(TransactionScopeOption.Required, transactionOptions))
+            using (ISession session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
+            {
+                messageSender.SetSession(session);
+
+                using (IMessageConsumer consumer = createConsumer(session))
+                {
+                    IMessage message = consumer.ReceiveNoWait();
+
+                    if (message == null)
                     {
-                        endProcessMessage(message != null ? message.JMSMessageID : null, exception);
+                        return;
+                    }
+
+                    result.MessageId = message.JMSMessageID;
+
+                    if (ProcessMessage(message))
+                    {
+                        scope.Complete();
                     }
                 }
             }
@@ -331,6 +272,12 @@
             }
 
             return result;
+        }
+
+        private class ReceiveResult
+        {
+            public Exception Exception { get; set; }
+            public string MessageId { get; set; }
         }
     }
 }

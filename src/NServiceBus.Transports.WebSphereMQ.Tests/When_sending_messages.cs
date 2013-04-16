@@ -45,7 +45,7 @@
             tm.Recoverable = true;
             tm.Headers.Add(Headers.ContentType, "text/xml");
 
-            var subscriptionsManager = new WebSphereMqSubscriptionsManager();
+            var subscriptionsManager = new WebSphereMqSubscriptionsManager(webSphereMqConnectionFactory);
             subscriptionsManager.Init(new TransactionSettings(), message =>
                 {
                     Console.Out.WriteLine("Event received, with correlationid={0}", message.CorrelationId);
@@ -159,7 +159,7 @@
             tm2.Headers.Add(Headers.ContentType, "text/xml");
 
             WebSphereMqMessageSender sender = new WebSphereMqMessageSender(webSphereMqConnectionFactory);
-            WebSphereMqDequeueStrategy dequeuer = new WebSphereMqDequeueStrategy(new WebSphereMqSubscriptionsManager(), new MessageReceiver(webSphereMqConnectionFactory, sender));
+            WebSphereMqDequeueStrategy dequeuer = new WebSphereMqDequeueStrategy(new WebSphereMqSubscriptionsManager(webSphereMqConnectionFactory), new MessageReceiver(webSphereMqConnectionFactory, sender));
 
             var address = Address.Parse("Boo");
             ManualResetEvent manualResetEvent = new ManualResetEvent(false);

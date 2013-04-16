@@ -4,12 +4,15 @@
     using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.Threading;
+    using IBM.XMS;
     using Logging;
     using ObjectBuilder;
     using Unicast.Transport;
 
     public class WebSphereMqSubscriptionsManager : IManageSubscriptions
     {
+        private readonly WebSphereMqConnectionFactory factory;
+
         private readonly BlockingCollection<Tuple<Type, Address>> events =
             new BlockingCollection<Tuple<Type, Address>>();
 
@@ -22,6 +25,11 @@
         static readonly ILog Logger = LogManager.GetLogger(typeof(WebSphereMqSubscriptionsManager));
 
         public IBuilder Builder { get; set; }
+
+        public WebSphereMqSubscriptionsManager(WebSphereMqConnectionFactory factory)
+        {
+            this.factory = factory;
+        }
 
         public void Subscribe(Type eventType, Address publisherAddress)
         {
@@ -42,6 +50,12 @@
 
             consumerSatellite.Stop();
             satellites.Remove(consumerSatellite);
+
+            var connection = factory.CreateConnection();
+            using (ISession session = connection.CreateSession(false, AcknowledgeMode.DupsOkAcknowledge))
+            {
+                session.Unsubscribe(eventType.FullName);
+            }
         }
 
         public void Init(TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
@@ -65,7 +79,7 @@
                         var consumerSatellite = new EventConsumerSatellite(messageReceiver, address,
                                                                            tuple.Item1.FullName);
 
-                        messageReceiver.Init(address, settings, tryProcessMessage, endProcessMessage);
+                        messageReceiver.Init(address, settings, tryProcessMessage, endProcessMessage, consumerSatellite.CreateConsumer);
 
                         satellites.Add(consumerSatellite);
                         Logger.InfoFormat("Starting receiver for [{0}] subscription.", address);
@@ -101,6 +115,11 @@
                 this.eventType = eventType;
 
                 this.address = address;
+            }
+
+            public IMessageConsumer CreateConsumer(ISession session)
+            {
+                return session.CreateDurableSubscriber(session.CreateTopic(address.Queue), eventType);
             }
 
             public Address InputAddress
