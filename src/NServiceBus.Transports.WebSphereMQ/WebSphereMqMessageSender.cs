@@ -14,7 +14,7 @@
     {
         private readonly WebSphereMqConnectionFactory factory;
         private readonly bool transactionsEnabled;
-        private readonly ThreadLocal<ISession> currentSession = new ThreadLocal<ISession>();
+        private static readonly ThreadLocal<ISession> CurrentSession = new ThreadLocal<ISession>();
         private static readonly JsonMessageSerializer Serializer = new JsonMessageSerializer(null);
         static readonly ILog Logger = LogManager.GetLogger(typeof(WebSphereMqMessageSender));
 
@@ -30,27 +30,24 @@
         /// <param name="session">
         ///     Native <see cref="ISession" />.
         /// </param>
-        public void SetSession(ISession session)
+        public static void SetSession(ISession session)
         {
-            currentSession.Value = session;
+            CurrentSession.Value = session;
         }
 
         public void Send(TransportMessage message, Address address)
         {
-            var connection = factory.CreateConnection();
-
             ISession session;
 
-            if (currentSession.IsValueCreated)
+            if (CurrentSession.IsValueCreated)
             {
-                session = currentSession.Value;
+                session = CurrentSession.Value;
             }
             else
             {
-                session = connection.CreateSession(transactionsEnabled,
-                                                   transactionsEnabled
-                                                       ? AcknowledgeMode.AutoAcknowledge
-                                                       : AcknowledgeMode.DupsOkAcknowledge);
+                var connection = factory.CreateConnection();
+
+                session = connection.CreateSession(transactionsEnabled, AcknowledgeMode.AutoAcknowledge);
             }
 
             try
@@ -103,11 +100,11 @@
                     {
                         mqMessage.JMSReplyTo = isTopic ? session.CreateTopic(message.ReplyToAddress.Queue) : session.CreateQueue(message.ReplyToAddress.Queue);
                     }
-
+                    
                     producer.Send(mqMessage);
                     Logger.DebugFormat(isTopic ? "Message published to {0}." : "Message sent to {0}.", address.Queue);
 
-                    if (!currentSession.IsValueCreated)
+                    if (!CurrentSession.IsValueCreated)
                     {
                         if (transactionsEnabled && Transaction.Current == null)
                         {
@@ -118,7 +115,7 @@
             }
             finally
             {
-                if (!currentSession.IsValueCreated)
+                if (!CurrentSession.IsValueCreated)
                 {
                     session.Close();
                     session.Dispose();

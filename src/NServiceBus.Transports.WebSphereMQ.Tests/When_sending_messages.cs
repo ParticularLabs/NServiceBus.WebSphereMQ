@@ -135,13 +135,13 @@
             SettingsHolder.Set("Transactions.DoNotWrapHandlersExecutionInATransactionScope", false);
 
 
-            var webSphereMqConnectionFactory =
-                new WebSphereMqConnectionFactory(new WebSphereMqSettings
-                    {
-                        Port = 1415,
-                        Channel = "NewOne",
-                        QueueManager = "Test2"
-                    });
+            var sphereMqSettings = new WebSphereMqSettings
+                {
+                    Port = 1415,
+                    Channel = "NewOne",
+                    QueueManager = "Test2"
+                };
+            var webSphereMqConnectionFactory = new WebSphereMqConnectionFactory(sphereMqSettings);
 
             TransportMessage tm = new TransportMessage();
             tm.Body = Encoding.UTF8.GetBytes("Hello John");
@@ -159,7 +159,7 @@
             tm2.Headers.Add(Headers.ContentType, "text/xml");
 
             WebSphereMqMessageSender sender = new WebSphereMqMessageSender(webSphereMqConnectionFactory);
-            WebSphereMqDequeueStrategy dequeuer = new WebSphereMqDequeueStrategy(new WebSphereMqSubscriptionsManager(webSphereMqConnectionFactory), new MessageReceiver(webSphereMqConnectionFactory, sender));
+            WebSphereMqDequeueStrategy dequeuer = new WebSphereMqDequeueStrategy(new WebSphereMqSubscriptionsManager(webSphereMqConnectionFactory), new MessageReceiver(sphereMqSettings));
 
             var address = Address.Parse("Boo");
             ManualResetEvent manualResetEvent = new ManualResetEvent(false);

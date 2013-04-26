@@ -52,7 +52,7 @@
             satellites.Remove(consumerSatellite);
 
             var connection = factory.CreateConnection();
-            using (ISession session = connection.CreateSession(false, AcknowledgeMode.DupsOkAcknowledge))
+            using (ISession session = connection.CreateSession(false, AcknowledgeMode.AutoAcknowledge))
             {
                 session.Unsubscribe(eventType.FullName);
             }

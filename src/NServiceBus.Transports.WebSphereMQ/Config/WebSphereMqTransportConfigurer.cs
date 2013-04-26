@@ -16,18 +16,17 @@
             Address.IgnoreMachineName();
 
             var parser = new WebSphereMqConnectionStringBuilder(connectionString);
-
             var settings = parser.RetrieveSettings();
 
-            var connectionManager = new WebSphereMqConnectionFactory(settings);
+            config.Configurer.RegisterSingleton<WebSphereMqSettings>(settings);
 
-            config.Configurer.RegisterSingleton<WebSphereMqConnectionFactory>(connectionManager);
+            config.Configurer.ConfigureComponent<WebSphereMqConnectionFactory>(DependencyLifecycle.SingleInstance);
 
             config.Configurer.ConfigureComponent<WebSphereMqMessageSender>(DependencyLifecycle.InstancePerCall);
 
             config.Configurer.ConfigureComponent<WebSphereMqSubscriptionsManager>(DependencyLifecycle.SingleInstance);
 
-            config.Configurer.ConfigureComponent<MessageReceiver>(DependencyLifecycle.InstancePerCall);
+            config.Configurer.ConfigureComponent<MessageReceiver>( DependencyLifecycle.InstancePerCall);
 
             config.Configurer.ConfigureComponent<WebSphereMqMessagePublisher>(DependencyLifecycle.InstancePerCall);
 

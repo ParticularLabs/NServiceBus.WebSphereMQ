@@ -11,8 +11,8 @@
     using IBM.XMS;
     using Logging;
     using Serializers.Json;
-    using Unicast.Transport;
     using Utils;
+    using TransactionSettings = Unicast.Transport.TransactionSettings;
 
     public class MessageReceiver
     {
@@ -20,30 +20,27 @@
         private static readonly JsonMessageSerializer Serializer = new JsonMessageSerializer(null);
         private static readonly ILog Logger = LogManager.GetLogger(typeof (WebSphereMqDequeueStrategy));
         private readonly CircuitBreaker circuitBreaker = new CircuitBreaker(100, TimeSpan.FromSeconds(30));
-        private readonly WebSphereMqConnectionFactory factory;
-        private readonly WebSphereMqMessageSender messageSender;
+        private readonly WebSphereMqSettings webSphereMqSettings;
         private readonly CancellationTokenSource tokenSource = new CancellationTokenSource();
-        private IConnection connection;
         private Func<ISession, IMessageConsumer> createConsumer;
         private Action<string, Exception> endProcessMessage;
         private Address endpointAddress;
         private DateTime minimumJmsDate = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         private MTATaskScheduler scheduler;
-        private TransactionSettings settings;
+        private TransactionSettings transactionSettings;
         private TransactionOptions transactionOptions;
         private Func<TransportMessage, bool> tryProcessMessage;
 
-        public MessageReceiver(WebSphereMqConnectionFactory factory, WebSphereMqMessageSender messageSender)
+        public MessageReceiver(WebSphereMqSettings settings)
         {
-            this.factory = factory;
-            this.messageSender = messageSender;
+            webSphereMqSettings = settings;
         }
 
         public void Init(Address address, TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
                          Action<string, Exception> endProcessMessage, Func<ISession, IMessageConsumer> createConsumer)
         {
             endpointAddress = address;
-            this.settings = settings;
+            transactionSettings = settings;
             this.tryProcessMessage = tryProcessMessage;
             this.endProcessMessage = endProcessMessage;
             this.createConsumer = createConsumer;
@@ -63,8 +60,6 @@
                                              String.Format("MessageReceiver Worker Thread for [{0}]",
                                                            endpointAddress));
 
-            connection = factory.CreateConnection();
-
             for (int i = 0; i < maximumConcurrencyLevel; i++)
             {
                 StartConsumer();
@@ -77,8 +72,10 @@
         public void Stop()
         {
             Logger.InfoFormat("Stopping MessageReceiver for [{0}].", endpointAddress);
+
             tokenSource.Cancel();
             scheduler.Dispose();
+
             Logger.InfoFormat("MessageReceiver for [{0}] stopped.", endpointAddress);
         }
 
@@ -104,51 +101,80 @@
                     }, TaskContinuationOptions.OnlyOnFaulted);
         }
 
+        private IConnection CreateConnection()
+        {
+            // Create the connection factories factory
+            var factoryFactory = XMSFactoryFactory.GetInstance(XMSC.CT_WMQ);
+
+            // Use the connection factories factory to create a connection factory
+            var cf = factoryFactory.CreateConnectionFactory();
+
+            // Set the properties
+            cf.SetStringProperty(XMSC.WMQ_HOST_NAME, webSphereMqSettings.Hostname);
+            cf.SetIntProperty(XMSC.WMQ_PORT, webSphereMqSettings.Port);
+            cf.SetStringProperty(XMSC.WMQ_CHANNEL, webSphereMqSettings.Channel);
+            cf.SetIntProperty(XMSC.WMQ_CONNECTION_MODE, XMSC.WMQ_CM_CLIENT);
+            cf.SetStringProperty(XMSC.WMQ_QUEUE_MANAGER, webSphereMqSettings.QueueManager);
+            //cf.SetIntProperty(XMSC.WMQ_CLIENT_RECONNECT_OPTIONS, XMSC.WMQ_CLIENT_RECONNECT);
+
+            var clientId = String.Format("NServiceBus-{0}-{1}", Address.Local, Configure.DefineEndpointVersionRetriever());
+            cf.SetStringProperty(XMSC.CLIENT_ID, Guid.NewGuid().ToString());
+
+            var connection = cf.CreateConnection();
+
+            connection.Start();
+
+            return connection;
+        }
+
         private void Action(object obj)
         {
             var cancellationToken = (CancellationToken) obj;
             var backOff = new BackOff(MaximumDelay);
 
-            while (!cancellationToken.IsCancellationRequested)
+            using (var connection = CreateConnection())
             {
-                var result = new ReceiveResult();
-
-                try
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    if (settings.IsTransactional)
+                    var result = new ReceiveResult();
+
+                    try
                     {
-                        if (!settings.DontUseDistributedTransactions)
+                        if (transactionSettings.IsTransactional)
                         {
-                            RunInDistributedTransaction(result);
+                            if (!transactionSettings.DontUseDistributedTransactions)
+                            {
+                                RunInDistributedTransaction(connection, result);
+                                continue;
+                            }
+
+                            RunInLocalTransaction(connection, result);
                             continue;
                         }
 
-                        RunInLocalTransaction(result);
-                        continue;
+                        RunInNoTransaction(connection, result);
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Exception = ex;
+                    }
+                    finally
+                    {
+                        endProcessMessage(result.MessageId, result.Exception);
                     }
 
-                    RunInNoTransaction(result);
+                    backOff.Wait(() => result.MessageId == null);
                 }
-                catch (Exception ex)
-                {
-                    result.Exception = ex;
-                }
-                finally
-                {
-                    endProcessMessage(result.MessageId, result.Exception);
-                }
-
-                backOff.Wait(() => result.MessageId == null);
             }
         }
 
-        private void RunInNoTransaction(ReceiveResult result)
+        private void RunInNoTransaction(IConnection connection, ReceiveResult result)
         {
-            using (ISession session = connection.CreateSession(false, AcknowledgeMode.DupsOkAcknowledge))
+            using (ISession session = connection.CreateSession(false, AcknowledgeMode.AutoAcknowledge))
             {
                 using (IMessageConsumer consumer = createConsumer(session))
                 {
-                    IMessage message = consumer.ReceiveNoWait();
+                    IMessage message = consumer.Receive(delay);
                     if (message == null)
                     {
                         return;
@@ -161,15 +187,17 @@
             }
         }
 
-        private void RunInLocalTransaction(ReceiveResult result)
+        private int delay = 1000;
+
+        private void RunInLocalTransaction(IConnection connection, ReceiveResult result)
         {
             using (ISession session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
             {
-                messageSender.SetSession(session);
+                WebSphereMqMessageSender.SetSession(session);
 
                 using (IMessageConsumer consumer = createConsumer(session))
                 {
-                    IMessage message = consumer.ReceiveNoWait();
+                    IMessage message = consumer.Receive(delay);
 
                     if (message == null)
                     {
@@ -186,16 +214,16 @@
             }
         }
 
-        private void RunInDistributedTransaction(ReceiveResult result)
+        private void RunInDistributedTransaction(IConnection connection, ReceiveResult result)
         {
-            using (var scope = new TransactionScope(TransactionScopeOption.Required, transactionOptions))
             using (ISession session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
             {
-                messageSender.SetSession(session);
+                WebSphereMqMessageSender.SetSession(session);
 
                 using (IMessageConsumer consumer = createConsumer(session))
+                using (var scope = new TransactionScope(TransactionScopeOption.Required, transactionOptions))
                 {
-                    IMessage message = consumer.ReceiveNoWait();
+                    IMessage message = consumer.Receive(delay);
 
                     if (message == null)
                     {
