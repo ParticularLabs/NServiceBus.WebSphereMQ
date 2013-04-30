@@ -58,12 +58,15 @@
     <Compile Include="Config\WebSphereMQTransport.cs" />
     <Compile Include="Config\WebSphereMQ.cs" />
     <Compile Include="Constants.cs" />
-    <Compile Include="MessageReceiver.cs" />
     <Compile Include="ConnectionFactory.cs" />
     <Compile Include="ConnectionStringBuilder.cs" />
     <Compile Include="DequeueStrategy.cs" />
     <Compile Include="MessagePublisher.cs" />
     <Compile Include="QueueCreator.cs" />
+    <Compile Include="Receivers\DistributedTransactionMessageReceiver.cs" />
+    <Compile Include="Receivers\LocalTransactionMessageReceiver.cs" />
+    <Compile Include="Receivers\MessageReceiver.cs" />
+    <Compile Include="Receivers\NoTransactionMessageReceiver.cs" />
     <Compile Include="SessionFactory.cs" />
     <Compile Include="WebSphereMqSettings.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

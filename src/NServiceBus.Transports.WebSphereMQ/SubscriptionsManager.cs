@@ -7,6 +7,7 @@
     using IBM.XMS;
     using Logging;
     using ObjectBuilder;
+    using Receivers;
     using Unicast.Transport;
 
     public class SubscriptionsManager : IManageSubscriptions
@@ -72,7 +73,7 @@
                 {
                     foreach (var tuple in events.GetConsumingEnumerable())
                     {
-                        var messageReceiver = Builder.Build<MessageReceiver>();
+                        var messageReceiver = Builder.Build<IMessageReceiver>();
                         Address address =
                             Address.Parse(String.Format("topic://{0}/EVENTS/#/{1}/#", tuple.Item2.Queue,
                                                         tuple.Item1.FullName));
@@ -107,9 +108,9 @@
         {
             private readonly Address address;
             private readonly string eventType;
-            private readonly MessageReceiver receiver;
+            private readonly IMessageReceiver receiver;
 
-            public EventConsumerSatellite(MessageReceiver receiver, Address address, string eventType)
+            public EventConsumerSatellite(IMessageReceiver receiver, Address address, string eventType)
             {
                 this.receiver = receiver;
                 this.eventType = eventType;

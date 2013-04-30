@@ -4,19 +4,29 @@
     using System.Threading;
     using System.Transactions;
     using IBM.XMS;
-    using Settings;
+    using TransactionSettings = Unicast.Transport.TransactionSettings;
 
     public class SessionFactory : IDisposable
     {
         private readonly ThreadLocal<ISession> currentSession = new ThreadLocal<ISession>();
-        private readonly ConnectionFactory factory;
-        private readonly bool transactionsEnabled;
+        private readonly ConnectionFactory connectionFactory;
         private bool disposed;
+        private readonly TransactionSettings transactionSettings;
+        private readonly bool reuseSession;
 
-        public SessionFactory(ConnectionFactory factory)
+        public SessionFactory(ConnectionFactory connectionFactory)
         {
-            this.factory = factory;
-            transactionsEnabled = SettingsHolder.Get<bool>("Transactions.Enabled");
+            this.connectionFactory = connectionFactory;
+
+            transactionSettings = new TransactionSettings();
+            if (transactionSettings.IsTransactional)
+            {
+                reuseSession = true;
+            }
+            else
+            {
+                reuseSession = transactionSettings.DoNotWrapHandlersExecutionInATransactionScope;
+            }
         }
 
         /// <summary>
@@ -34,17 +44,19 @@
         {
             if (currentSession.IsValueCreated)
             {
-                return currentSession.Value;
+                if (reuseSession)
+                {
+                    return currentSession.Value;                    
+                }
             }
 
-            var connection = factory.GetPooledConnection();
-
-            return connection.CreateSession(transactionsEnabled, AcknowledgeMode.AutoAcknowledge);
+            // Send only session
+            return connectionFactory.GetPooledConnection().CreateSession(true, AcknowledgeMode.AutoAcknowledge);
         }
 
         public void CommitSession(ISession session)
         {
-            if (transactionsEnabled && !currentSession.IsValueCreated && Transaction.Current == null)
+            if (!(reuseSession && currentSession.IsValueCreated) && Transaction.Current == null)
             {
                 session.Commit();
             }
@@ -52,7 +64,7 @@
 
         public void DisposeSession(ISession session)
         {
-            if (!currentSession.IsValueCreated)
+            if (!(reuseSession && currentSession.IsValueCreated))
             {
                 session.Dispose();
             }

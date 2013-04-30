@@ -1,4 +1,4 @@
-﻿namespace NServiceBus.Transports.WebSphereMQ
+﻿namespace NServiceBus.Transports.WebSphereMQ.Receivers
 {
     using System;
     using System.Collections.Generic;
@@ -11,32 +11,35 @@
     using IBM.XMS;
     using Logging;
     using Serializers.Json;
+    using Unicast.Transport;
     using Utils;
-    using TransactionSettings = Unicast.Transport.TransactionSettings;
 
-    public class MessageReceiver
+    public interface IMessageReceiver
+    {
+        void Init(Address address, TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
+                                  Action<string, Exception> endProcessMessage, Func<ISession, IMessageConsumer> createConsumer);
+
+        void Start(int maximumConcurrencyLevel);
+        void Stop();
+    }
+
+    public abstract class MessageReceiver : IMessageReceiver
     {
         private const int MaximumDelay = 1000;
         private static readonly JsonMessageSerializer Serializer = new JsonMessageSerializer(null);
-        private static readonly ILog Logger = LogManager.GetLogger(typeof (DequeueStrategy));
+        protected static readonly ILog Logger = LogManager.GetLogger(typeof (DequeueStrategy));
         private readonly CircuitBreaker circuitBreaker = new CircuitBreaker(100, TimeSpan.FromSeconds(30));
-        private readonly SessionFactory sessionFactory;
-        private readonly ConnectionFactory connectionFactory;
         private readonly CancellationTokenSource tokenSource = new CancellationTokenSource();
         private Func<ISession, IMessageConsumer> createConsumer;
         private Action<string, Exception> endProcessMessage;
         private Address endpointAddress;
         private DateTime minimumJmsDate = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         private MTATaskScheduler scheduler;
+        protected TransactionOptions transactionOptions;
         private TransactionSettings transactionSettings;
-        private TransactionOptions transactionOptions;
         private Func<TransportMessage, bool> tryProcessMessage;
-
-        public MessageReceiver(SessionFactory sessionFactory, ConnectionFactory connectionFactory)
-        {
-            this.sessionFactory = sessionFactory;
-            this.connectionFactory = connectionFactory;
-        }
+        public SessionFactory SessionFactory { get; set; }
+        public ConnectionFactory ConnectionFactory { get; set; }
 
         public void Init(Address address, TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
                          Action<string, Exception> endProcessMessage, Func<ISession, IMessageConsumer> createConsumer)
@@ -110,11 +113,13 @@
             var cancellationToken = (CancellationToken) obj;
             var backOff = new BackOff(MaximumDelay);
 
-            using (var connection = connectionFactory.CreateNewConnection())
+            using (IConnection connection = ConnectionFactory.CreateNewConnection())
             {
-                using (ISession session = connection.CreateSession(transactionSettings.IsTransactional, AcknowledgeMode.AutoAcknowledge))
+                using (
+                    ISession session = connection.CreateSession(transactionSettings.IsTransactional,
+                                                                AcknowledgeMode.AutoAcknowledge))
                 {
-                    sessionFactory.SetSession(session);
+                    SessionFactory.SetSession(session);
 
                     using (IMessageConsumer consumer = createConsumer(session))
                     {
@@ -124,19 +129,7 @@
 
                             try
                             {
-                                if (transactionSettings.IsTransactional)
-                                {
-                                    if (!transactionSettings.DontUseDistributedTransactions)
-                                    {
-                                        RunInDistributedTransaction(consumer, result);
-                                        continue;
-                                    }
-
-                                    RunInLocalTransaction(consumer, session, result);
-                                    return;
-                                }
-
-                                RunInNoTransaction(consumer, result);
+                                Run(consumer, session, result);
                             }
                             catch (Exception ex)
                             {
@@ -155,74 +148,9 @@
             }
         }
 
-        private void RunInNoTransaction(IMessageConsumer consumer, ReceiveResult result)
-        {
-            IMessage message = consumer.ReceiveNoWait();
-            if (message == null)
-            {
-                return;
-            }
+        protected abstract void Run(IMessageConsumer consumer, ISession session, ReceiveResult result);
 
-            Logger.Debug("Message received in RunInNoTransaction");
-
-            result.MessageId = message.JMSMessageID;
-
-            ProcessMessage(message);
-        }
-
-        private void RunInLocalTransaction(IMessageConsumer consumer, ISession session, ReceiveResult result)
-        {
-            IMessage message = consumer.ReceiveNoWait();
-
-            if (message == null)
-            {
-                return;
-            }
-
-            Logger.Debug("Message received in RunInLocalTransaction");
-
-            result.MessageId = message.JMSMessageID;
-
-            if (ProcessMessage(message))
-            {
-                session.Commit();
-            }
-            else
-            {
-                session.Rollback();
-            }
-        }
-
-        private void RunInDistributedTransaction(IMessageConsumer consumer, ReceiveResult result)
-        {
-            using (var lockReset = new ManualResetEventSlim(false))
-            {
-                using (var scope = new TransactionScope(TransactionScopeOption.Required, transactionOptions))
-                {
-                    IMessage message = consumer.ReceiveNoWait();
-
-                    if (message == null)
-                    {
-                        return;
-                    }
-
-                    Logger.Debug("Message received in RunInDistributedTransaction");
-
-                    result.MessageId = message.JMSMessageID;
-
-                    Transaction.Current.TransactionCompleted += (sender, args) => lockReset.Set();
-
-                    if (ProcessMessage(message))
-                    {
-                        scope.Complete();
-                    }
-                }
-
-                lockReset.Wait();
-            }
-        }
-
-        private bool ProcessMessage(IMessage message)
+        protected bool ProcessMessage(IMessage message)
         {
             TransportMessage transportMessage;
             try
@@ -284,7 +212,7 @@
             return result;
         }
 
-        private class ReceiveResult
+        protected class ReceiveResult
         {
             public Exception Exception { get; set; }
             public string MessageId { get; set; }

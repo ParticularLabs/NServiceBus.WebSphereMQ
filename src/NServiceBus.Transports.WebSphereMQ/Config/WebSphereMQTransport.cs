@@ -2,9 +2,11 @@
 {
     using Features;
     using NServiceBus.Config;
+    using Receivers;
     using Settings;
     using Unicast.Queuing.Installers;
     using Unicast.Subscriptions;
+    using Unicast.Transport;
     using WebSphereMQ = NServiceBus.WebSphereMQ;
 
     public class WebSphereMQTransport : ConfigureTransport<WebSphereMQ>, IFeature
@@ -29,7 +31,25 @@
             NServiceBus.Configure.Component<SubscriptionsManager>(DependencyLifecycle.SingleInstance);
 
             NServiceBus.Configure.Component<MessageSender>(DependencyLifecycle.InstancePerCall);
-            NServiceBus.Configure.Component<MessageReceiver>(DependencyLifecycle.InstancePerCall);
+
+            var transactionSettings = new Unicast.Transport.TransactionSettings();
+
+            if (transactionSettings.IsTransactional)
+            {
+                if (!transactionSettings.DontUseDistributedTransactions)
+                {
+                    NServiceBus.Configure.Component<DistributedTransactionMessageReceiver>(DependencyLifecycle.InstancePerCall);
+                }
+                else
+                {
+                    NServiceBus.Configure.Component<LocalTransactionMessageReceiver>(DependencyLifecycle.InstancePerCall);
+                }
+            }
+            else
+            {
+                NServiceBus.Configure.Component<NoTransactionMessageReceiver>(DependencyLifecycle.InstancePerCall);
+            }
+
             NServiceBus.Configure.Component<MessagePublisher>(DependencyLifecycle.InstancePerCall);
             NServiceBus.Configure.Component<QueueCreator>(DependencyLifecycle.InstancePerCall)
                        .ConfigureProperty(p => p.Settings, settings);

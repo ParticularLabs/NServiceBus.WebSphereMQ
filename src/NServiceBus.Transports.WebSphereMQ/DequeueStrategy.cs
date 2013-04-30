@@ -5,13 +5,14 @@
     using IBM.WMQ;
     using IBM.WMQ.PCF;
     using Logging;
+    using Receivers;
     using Unicast.Transport;
     using MQC = IBM.XMS.MQC;
 
     public class DequeueStrategy : IDequeueMessages
     {
         private readonly SubscriptionsManager subscriptionsManager;
-        private readonly MessageReceiver messageReceiver;
+        private readonly IMessageReceiver messageReceiver;
 
         /// <summary>
         ///     Purges the queue on startup.
@@ -23,7 +24,7 @@
         /// </summary>
         public WebSphereMqSettings Settings { get; set; }
 
-        public DequeueStrategy(SubscriptionsManager subscriptionsManager, MessageReceiver messageReceiver)
+        public DequeueStrategy(SubscriptionsManager subscriptionsManager, IMessageReceiver messageReceiver)
         {
             this.subscriptionsManager = subscriptionsManager;
             this.messageReceiver = messageReceiver;
