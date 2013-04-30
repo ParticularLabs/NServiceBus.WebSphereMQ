@@ -9,9 +9,9 @@
     using ObjectBuilder;
     using Unicast.Transport;
 
-    public class WebSphereMqSubscriptionsManager : IManageSubscriptions
+    public class SubscriptionsManager : IManageSubscriptions
     {
-        private readonly WebSphereMqConnectionFactory factory;
+        private readonly ConnectionFactory factory;
 
         private readonly BlockingCollection<Tuple<Type, Address>> events =
             new BlockingCollection<Tuple<Type, Address>>();
@@ -22,11 +22,11 @@
         private Thread startSubscriptionThread;
         private TransactionSettings settings;
         private Func<TransportMessage, bool> tryProcessMessage;
-        static readonly ILog Logger = LogManager.GetLogger(typeof(WebSphereMqSubscriptionsManager));
+        static readonly ILog Logger = LogManager.GetLogger(typeof(SubscriptionsManager));
 
         public IBuilder Builder { get; set; }
 
-        public WebSphereMqSubscriptionsManager(WebSphereMqConnectionFactory factory)
+        public SubscriptionsManager(ConnectionFactory factory)
         {
             this.factory = factory;
         }
@@ -51,7 +51,7 @@
             consumerSatellite.Stop();
             satellites.Remove(consumerSatellite);
 
-            var connection = factory.CreateConnection();
+            var connection = factory.GetPooledConnection();
             using (ISession session = connection.CreateSession(false, AcknowledgeMode.AutoAcknowledge))
             {
                 session.Unsubscribe(eventType.FullName);

@@ -18,9 +18,10 @@
     {
         private const int MaximumDelay = 1000;
         private static readonly JsonMessageSerializer Serializer = new JsonMessageSerializer(null);
-        private static readonly ILog Logger = LogManager.GetLogger(typeof (WebSphereMqDequeueStrategy));
+        private static readonly ILog Logger = LogManager.GetLogger(typeof (DequeueStrategy));
         private readonly CircuitBreaker circuitBreaker = new CircuitBreaker(100, TimeSpan.FromSeconds(30));
-        private readonly WebSphereMqSettings webSphereMqSettings;
+        private readonly SessionFactory sessionFactory;
+        private readonly ConnectionFactory connectionFactory;
         private readonly CancellationTokenSource tokenSource = new CancellationTokenSource();
         private Func<ISession, IMessageConsumer> createConsumer;
         private Action<string, Exception> endProcessMessage;
@@ -31,9 +32,10 @@
         private TransactionOptions transactionOptions;
         private Func<TransportMessage, bool> tryProcessMessage;
 
-        public MessageReceiver(WebSphereMqSettings settings)
+        public MessageReceiver(SessionFactory sessionFactory, ConnectionFactory connectionFactory)
         {
-            webSphereMqSettings = settings;
+            this.sessionFactory = sessionFactory;
+            this.connectionFactory = connectionFactory;
         }
 
         public void Init(Address address, TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
@@ -89,6 +91,8 @@
                     {
                         t.Exception.Handle(ex =>
                             {
+                                Logger.Error("Error retrieving message.", ex);
+
                                 circuitBreaker.Execute(
                                     () =>
                                     Configure.Instance.RaiseCriticalError(
@@ -101,142 +105,120 @@
                     }, TaskContinuationOptions.OnlyOnFaulted);
         }
 
-        private IConnection CreateConnection()
-        {
-            // Create the connection factories factory
-            var factoryFactory = XMSFactoryFactory.GetInstance(XMSC.CT_WMQ);
-
-            // Use the connection factories factory to create a connection factory
-            var cf = factoryFactory.CreateConnectionFactory();
-
-            // Set the properties
-            cf.SetStringProperty(XMSC.WMQ_HOST_NAME, webSphereMqSettings.Hostname);
-            cf.SetIntProperty(XMSC.WMQ_PORT, webSphereMqSettings.Port);
-            cf.SetStringProperty(XMSC.WMQ_CHANNEL, webSphereMqSettings.Channel);
-            cf.SetIntProperty(XMSC.WMQ_CONNECTION_MODE, XMSC.WMQ_CM_CLIENT);
-            cf.SetStringProperty(XMSC.WMQ_QUEUE_MANAGER, webSphereMqSettings.QueueManager);
-            //cf.SetIntProperty(XMSC.WMQ_CLIENT_RECONNECT_OPTIONS, XMSC.WMQ_CLIENT_RECONNECT);
-
-            var clientId = String.Format("NServiceBus-{0}-{1}", Address.Local, Configure.DefineEndpointVersionRetriever());
-            cf.SetStringProperty(XMSC.CLIENT_ID, Guid.NewGuid().ToString());
-
-            var connection = cf.CreateConnection();
-
-            connection.Start();
-
-            return connection;
-        }
-
         private void Action(object obj)
         {
             var cancellationToken = (CancellationToken) obj;
             var backOff = new BackOff(MaximumDelay);
 
-            using (var connection = CreateConnection())
+            using (var connection = connectionFactory.CreateNewConnection())
             {
-                while (!cancellationToken.IsCancellationRequested)
+                using (ISession session = connection.CreateSession(transactionSettings.IsTransactional, AcknowledgeMode.AutoAcknowledge))
                 {
-                    var result = new ReceiveResult();
+                    sessionFactory.SetSession(session);
 
-                    try
+                    using (IMessageConsumer consumer = createConsumer(session))
                     {
-                        if (transactionSettings.IsTransactional)
+                        while (!cancellationToken.IsCancellationRequested)
                         {
-                            if (!transactionSettings.DontUseDistributedTransactions)
+                            var result = new ReceiveResult();
+
+                            try
                             {
-                                RunInDistributedTransaction(connection, result);
-                                continue;
+                                if (transactionSettings.IsTransactional)
+                                {
+                                    if (!transactionSettings.DontUseDistributedTransactions)
+                                    {
+                                        RunInDistributedTransaction(consumer, result);
+                                        continue;
+                                    }
+
+                                    RunInLocalTransaction(consumer, session, result);
+                                    return;
+                                }
+
+                                RunInNoTransaction(consumer, result);
                             }
+                            catch (Exception ex)
+                            {
+                                Logger.Error("Error retrieving message.", ex);
 
-                            RunInLocalTransaction(connection, result);
-                            continue;
+                                result.Exception = ex;
+                            }
+                            finally
+                            {
+                                endProcessMessage(result.MessageId, result.Exception);
+                                backOff.Wait(() => result.MessageId == null);
+                            }
                         }
-
-                        RunInNoTransaction(connection, result);
-                    }
-                    catch (Exception ex)
-                    {
-                        result.Exception = ex;
-                    }
-                    finally
-                    {
-                        endProcessMessage(result.MessageId, result.Exception);
-                    }
-
-                    backOff.Wait(() => result.MessageId == null);
-                }
-            }
-        }
-
-        private void RunInNoTransaction(IConnection connection, ReceiveResult result)
-        {
-            using (ISession session = connection.CreateSession(false, AcknowledgeMode.AutoAcknowledge))
-            {
-                using (IMessageConsumer consumer = createConsumer(session))
-                {
-                    IMessage message = consumer.Receive(delay);
-                    if (message == null)
-                    {
-                        return;
-                    }
-
-                    result.MessageId = message.JMSMessageID;
-
-                    ProcessMessage(message);
-                }
-            }
-        }
-
-        private int delay = 1000;
-
-        private void RunInLocalTransaction(IConnection connection, ReceiveResult result)
-        {
-            using (ISession session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
-            {
-                WebSphereMqMessageSender.SetSession(session);
-
-                using (IMessageConsumer consumer = createConsumer(session))
-                {
-                    IMessage message = consumer.Receive(delay);
-
-                    if (message == null)
-                    {
-                        return;
-                    }
-
-                    result.MessageId = message.JMSMessageID;
-
-                    if (ProcessMessage(message))
-                    {
-                        session.Commit();
                     }
                 }
             }
         }
 
-        private void RunInDistributedTransaction(IConnection connection, ReceiveResult result)
+        private void RunInNoTransaction(IMessageConsumer consumer, ReceiveResult result)
         {
-            using (ISession session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
+            IMessage message = consumer.ReceiveNoWait();
+            if (message == null)
             {
-                WebSphereMqMessageSender.SetSession(session);
+                return;
+            }
 
-                using (IMessageConsumer consumer = createConsumer(session))
+            Logger.Debug("Message received in RunInNoTransaction");
+
+            result.MessageId = message.JMSMessageID;
+
+            ProcessMessage(message);
+        }
+
+        private void RunInLocalTransaction(IMessageConsumer consumer, ISession session, ReceiveResult result)
+        {
+            IMessage message = consumer.ReceiveNoWait();
+
+            if (message == null)
+            {
+                return;
+            }
+
+            Logger.Debug("Message received in RunInLocalTransaction");
+
+            result.MessageId = message.JMSMessageID;
+
+            if (ProcessMessage(message))
+            {
+                session.Commit();
+            }
+            else
+            {
+                session.Rollback();
+            }
+        }
+
+        private void RunInDistributedTransaction(IMessageConsumer consumer, ReceiveResult result)
+        {
+            using (var lockReset = new ManualResetEventSlim(false))
+            {
                 using (var scope = new TransactionScope(TransactionScopeOption.Required, transactionOptions))
                 {
-                    IMessage message = consumer.Receive(delay);
+                    IMessage message = consumer.ReceiveNoWait();
 
                     if (message == null)
                     {
                         return;
                     }
 
+                    Logger.Debug("Message received in RunInDistributedTransaction");
+
                     result.MessageId = message.JMSMessageID;
+
+                    Transaction.Current.TransactionCompleted += (sender, args) => lockReset.Set();
 
                     if (ProcessMessage(message))
                     {
                         scope.Complete();
                     }
                 }
+
+                lockReset.Wait();
             }
         }
 

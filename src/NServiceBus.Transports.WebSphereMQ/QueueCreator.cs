@@ -2,12 +2,11 @@
 {
     using System;
     using System.Collections;
-    using System.Configuration;
     using IBM.WMQ;
     using IBM.WMQ.PCF;
     using MQC = IBM.XMS.MQC;
 
-    public class WebSphereMqQueueCreator : ICreateQueues
+    public class QueueCreator : ICreateQueues
     {
         /// <summary>
         /// Settings

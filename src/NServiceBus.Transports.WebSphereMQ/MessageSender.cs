@@ -2,56 +2,29 @@
 {
     using System;
     using System.Linq;
-    using System.Threading;
-    using System.Transactions;
     using IBM.XMS;
     using Logging;
     using Serializers.Json;
-    using Settings;
 
-
-    public class WebSphereMqMessageSender : ISendMessages
+    public class MessageSender : ISendMessages
     {
-        private readonly WebSphereMqConnectionFactory factory;
-        private readonly bool transactionsEnabled;
-        private static readonly ThreadLocal<ISession> CurrentSession = new ThreadLocal<ISession>();
+        private readonly SessionFactory sessionFactory;
         private static readonly JsonMessageSerializer Serializer = new JsonMessageSerializer(null);
-        static readonly ILog Logger = LogManager.GetLogger(typeof(WebSphereMqMessageSender));
+        static readonly ILog Logger = LogManager.GetLogger(typeof(MessageSender));
 
-        public WebSphereMqMessageSender(WebSphereMqConnectionFactory factory)
+        public MessageSender(SessionFactory sessionFactory)
         {
-            this.factory = factory;
-            transactionsEnabled = SettingsHolder.Get<bool>("Transactions.Enabled");
-        }
-
-        /// <summary>
-        ///     Sets the native session.
-        /// </summary>
-        /// <param name="session">
-        ///     Native <see cref="ISession" />.
-        /// </param>
-        public static void SetSession(ISession session)
-        {
-            CurrentSession.Value = session;
+            this.sessionFactory = sessionFactory;
         }
 
         public void Send(TransportMessage message, Address address)
         {
-            ISession session;
-
-            if (CurrentSession.IsValueCreated)
-            {
-                session = CurrentSession.Value;
-            }
-            else
-            {
-                var connection = factory.CreateConnection();
-
-                session = connection.CreateSession(transactionsEnabled, AcknowledgeMode.AutoAcknowledge);
-            }
+            ISession session = null;
 
             try
             {
+                session = sessionFactory.GetSession();
+
                 var isTopic = IsTopic(address);
                 var destination = isTopic ? session.CreateTopic(address.Queue) : session.CreateQueue(address.Queue);
 
@@ -104,22 +77,12 @@
                     producer.Send(mqMessage);
                     Logger.DebugFormat(isTopic ? "Message published to {0}." : "Message sent to {0}.", address.Queue);
 
-                    if (!CurrentSession.IsValueCreated)
-                    {
-                        if (transactionsEnabled && Transaction.Current == null)
-                        {
-                            session.Commit();
-                        }
-                    }
+                    sessionFactory.CommitSession(session);
                 }
             }
             finally
             {
-                if (!CurrentSession.IsValueCreated)
-                {
-                    session.Close();
-                    session.Dispose();
-                }
+                sessionFactory.DisposeSession(session);
             }
         }
 
