@@ -40,11 +40,11 @@
     </Reference>
     <Reference Include="NServiceBus, Version=4.0.0.0, Culture=neutral, PublicKeyToken=9fc386479f8a226c, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\packages\NServiceBus.Interfaces.4.0.0-unstable2996\lib\net40\NServiceBus.dll</HintPath>
+      <HintPath>..\packages\NServiceBus.Interfaces.4.0.0-unstable3006\lib\net40\NServiceBus.dll</HintPath>
     </Reference>
     <Reference Include="NServiceBus.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=9fc386479f8a226c, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\packages\NServiceBus.4.0.0-unstable2996\lib\net40\NServiceBus.Core.dll</HintPath>
+      <HintPath>..\packages\NServiceBus.4.0.0-unstable3006\lib\net40\NServiceBus.Core.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -64,18 +64,22 @@
     <Compile Include="MessagePublisher.cs" />
     <Compile Include="QueueCreator.cs" />
     <Compile Include="Receivers\DistributedTransactionMessageReceiver.cs" />
+    <Compile Include="Receivers\IMessageReceiver.cs" />
     <Compile Include="Receivers\LocalTransactionMessageReceiver.cs" />
     <Compile Include="Receivers\MessageReceiver.cs" />
     <Compile Include="Receivers\NoTransactionMessageReceiver.cs" />
-    <Compile Include="SessionFactory.cs" />
+    <Compile Include="CurrentSessions.cs" />
+    <Compile Include="Senders\DistributedTransactionMessageSender.cs" />
+    <Compile Include="Senders\LocalTransactionMessageSender.cs" />
+    <Compile Include="Senders\NoTransactionMessageSender.cs" />
     <Compile Include="WebSphereMqSettings.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="MessageSender.cs" />
     <Compile Include="SubscriptionsManager.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

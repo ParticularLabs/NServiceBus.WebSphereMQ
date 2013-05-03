@@ -3,10 +3,10 @@
     using Features;
     using NServiceBus.Config;
     using Receivers;
+    using Senders;
     using Settings;
     using Unicast.Queuing.Installers;
     using Unicast.Subscriptions;
-    using Unicast.Transport;
     using WebSphereMQ = NServiceBus.WebSphereMQ;
 
     public class WebSphereMQTransport : ConfigureTransport<WebSphereMQ>, IFeature
@@ -27,10 +27,8 @@
             NServiceBus.Configure.Instance.Configurer.RegisterSingleton<WebSphereMqSettings>(settings);
 
             NServiceBus.Configure.Component<ConnectionFactory>(DependencyLifecycle.SingleInstance);
-            NServiceBus.Configure.Component<SessionFactory>(DependencyLifecycle.SingleInstance);
+            NServiceBus.Configure.Component<CurrentSessions>(DependencyLifecycle.SingleInstance);
             NServiceBus.Configure.Component<SubscriptionsManager>(DependencyLifecycle.SingleInstance);
-
-            NServiceBus.Configure.Component<MessageSender>(DependencyLifecycle.InstancePerCall);
 
             var transactionSettings = new Unicast.Transport.TransactionSettings();
 
@@ -39,14 +37,18 @@
                 if (!transactionSettings.DontUseDistributedTransactions)
                 {
                     NServiceBus.Configure.Component<DistributedTransactionMessageReceiver>(DependencyLifecycle.InstancePerCall);
+                    NServiceBus.Configure.Component<DistributedTransactionMessageSender>(DependencyLifecycle.InstancePerCall);
+
                 }
                 else
                 {
+                    NServiceBus.Configure.Component<LocalTransactionMessageSender>(DependencyLifecycle.InstancePerCall);
                     NServiceBus.Configure.Component<LocalTransactionMessageReceiver>(DependencyLifecycle.InstancePerCall);
                 }
             }
             else
             {
+                NServiceBus.Configure.Component<NoTransactionMessageSender>(DependencyLifecycle.InstancePerCall);
                 NServiceBus.Configure.Component<NoTransactionMessageReceiver>(DependencyLifecycle.InstancePerCall);
             }
 

@@ -1,30 +1,38 @@
-﻿namespace NServiceBus.Transports.WebSphereMQ
+﻿namespace NServiceBus.Transports.WebSphereMQ.Senders
 {
     using System;
     using System.Linq;
+    using System.Transactions;
     using IBM.XMS;
     using Logging;
     using Serializers.Json;
 
-    public class MessageSender : ISendMessages
+    public class LocalTransactionMessageSender : ISendMessages
     {
-        private readonly SessionFactory sessionFactory;
+        private readonly ConnectionFactory connectionFactory;
         private static readonly JsonMessageSerializer Serializer = new JsonMessageSerializer(null);
-        static readonly ILog Logger = LogManager.GetLogger(typeof(MessageSender));
+        static readonly ILog Logger = LogManager.GetLogger(typeof(DistributedTransactionMessageSender));
 
-        public MessageSender(SessionFactory sessionFactory)
+        public LocalTransactionMessageSender(ConnectionFactory connectionFactory)
         {
-            this.sessionFactory = sessionFactory;
+            this.connectionFactory = connectionFactory;
         }
+
+        public CurrentSessions CurrentSessions { get; set; }
 
         public void Send(TransportMessage message, Address address)
         {
-            ISession session = null;
+            bool hasExistingSession = true;
+            ISession session = CurrentSessions.GetSession();
+
+            if (session == null)
+            {
+                hasExistingSession = false;
+                session = connectionFactory.GetPooledConnection().CreateSession(false, AcknowledgeMode.AutoAcknowledge);
+            }
 
             try
             {
-                session = sessionFactory.GetSession();
-
                 var isTopic = IsTopic(address);
                 var destination = isTopic ? session.CreateTopic(address.Queue) : session.CreateQueue(address.Queue);
 
@@ -51,7 +59,7 @@
 
                     if (message.TimeToBeReceived < TimeSpan.MaxValue)
                     {
-                        producer.TimeToLive = (long) message.TimeToBeReceived.TotalMilliseconds;
+                        producer.TimeToLive = (long)message.TimeToBeReceived.TotalMilliseconds;
                     }
 
                     mqMessage.SetStringProperty(Constants.NSB_HEADERS, Serializer.SerializeObject(message.Headers));
@@ -60,7 +68,7 @@
                     {
                         mqMessage.JMSType =
                             message.Headers[Headers.EnclosedMessageTypes]
-                                .Split(new[] {','}, StringSplitOptions.RemoveEmptyEntries)
+                                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
                                 .FirstOrDefault();
                     }
 
@@ -74,15 +82,20 @@
                         mqMessage.JMSReplyTo = isTopic ? session.CreateTopic(message.ReplyToAddress.Queue) : session.CreateQueue(message.ReplyToAddress.Queue);
                     }
                     
-                    producer.Send(mqMessage);
-                    Logger.DebugFormat(isTopic ? "Message published to {0}." : "Message sent to {0}.", address.Queue);
+                    using (new TransactionScope(TransactionScopeOption.Suppress))
+                    {
+                        producer.Send(mqMessage);
+                    }
 
-                    sessionFactory.CommitSession(session);
+                    Logger.DebugFormat(isTopic ? "Message published to {0}." : "Message sent to {0}.", address.Queue);
                 }
             }
             finally
             {
-                sessionFactory.DisposeSession(session);
+                if (!hasExistingSession)
+                {
+                    session.Dispose();
+                }
             }
         }
 

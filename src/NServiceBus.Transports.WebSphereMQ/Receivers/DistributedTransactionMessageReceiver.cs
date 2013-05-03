@@ -1,35 +1,64 @@
 ﻿namespace NServiceBus.Transports.WebSphereMQ.Receivers
 {
+    using System;
     using System.Threading;
     using System.Transactions;
     using IBM.XMS;
+    using Utils;
 
     public class DistributedTransactionMessageReceiver : MessageReceiver
     {
-        protected override void Run(IMessageConsumer consumer, ISession session, ReceiveResult result)
+        protected override void Receive(CancellationToken token, IConnection connection)
         {
-            using (var lockReset = new ManualResetEventSlim(false))
+            var backOff = new BackOff(MaximumDelay);
+
+            using (ISession session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
             {
-                using (var scope = new TransactionScope(TransactionScopeOption.Required, transactionOptions))
+                CurrentSessions.SetSession(session);
+
+                using (IMessageConsumer consumer = createConsumer(session))
                 {
-                    IMessage message = consumer.ReceiveNoWait();
-
-                    if (message == null)
+                    while (!token.IsCancellationRequested)
                     {
-                        return;
-                    }
+                        IMessage message;
 
-                    result.MessageId = message.JMSMessageID;
+                        using (var lockReset = new ManualResetEventSlim(false))
+                        {
+                            using (var scope = new TransactionScope(TransactionScopeOption.Required, transactionOptions))
+                            {
+                                Transaction.Current.TransactionCompleted += (sender, args) => lockReset.Set();
 
-                    Transaction.Current.TransactionCompleted += (sender, args) => lockReset.Set();
+                                message = consumer.ReceiveNoWait();
 
-                    if (ProcessMessage(message))
-                    {
-                        scope.Complete();
+                                if (message != null)
+                                {
+                                    Exception exception = null;
+                                    try
+                                    {
+                                        if (ProcessMessage(message))
+                                        {
+                                            scope.Complete();
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Logger.Error("Error processing message.", ex);
+
+                                        exception = ex;
+                                    }
+                                    finally
+                                    {
+                                        endProcessMessage(message.JMSMessageID, exception);
+                                    }
+                                }
+                            }
+
+                            lockReset.Wait();
+                        }
+
+                        backOff.Wait(() => message == null);
                     }
                 }
-
-                lockReset.Wait();
             }
         }
     }

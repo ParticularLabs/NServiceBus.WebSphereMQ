@@ -12,40 +12,28 @@
     using Logging;
     using Serializers.Json;
     using Unicast.Transport;
-    using Utils;
-
-    public interface IMessageReceiver
-    {
-        void Init(Address address, TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
-                                  Action<string, Exception> endProcessMessage, Func<ISession, IMessageConsumer> createConsumer);
-
-        void Start(int maximumConcurrencyLevel);
-        void Stop();
-    }
 
     public abstract class MessageReceiver : IMessageReceiver
     {
-        private const int MaximumDelay = 1000;
+        protected const int MaximumDelay = 1000;
         private static readonly JsonMessageSerializer Serializer = new JsonMessageSerializer(null);
         protected static readonly ILog Logger = LogManager.GetLogger(typeof (DequeueStrategy));
         private readonly CircuitBreaker circuitBreaker = new CircuitBreaker(100, TimeSpan.FromSeconds(30));
         private readonly CancellationTokenSource tokenSource = new CancellationTokenSource();
-        private Func<ISession, IMessageConsumer> createConsumer;
-        private Action<string, Exception> endProcessMessage;
+        protected Func<ISession, IMessageConsumer> createConsumer;
+        protected Action<string, Exception> endProcessMessage;
         private Address endpointAddress;
         private DateTime minimumJmsDate = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         private MTATaskScheduler scheduler;
         protected TransactionOptions transactionOptions;
-        private TransactionSettings transactionSettings;
         private Func<TransportMessage, bool> tryProcessMessage;
-        public SessionFactory SessionFactory { get; set; }
+        public CurrentSessions CurrentSessions { get; set; }
         public ConnectionFactory ConnectionFactory { get; set; }
 
         public void Init(Address address, TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
                          Action<string, Exception> endProcessMessage, Func<ISession, IMessageConsumer> createConsumer)
         {
             endpointAddress = address;
-            transactionSettings = settings;
             this.tryProcessMessage = tryProcessMessage;
             this.endProcessMessage = endProcessMessage;
             this.createConsumer = createConsumer;
@@ -111,44 +99,14 @@
         private void Action(object obj)
         {
             var cancellationToken = (CancellationToken) obj;
-            var backOff = new BackOff(MaximumDelay);
 
             using (IConnection connection = ConnectionFactory.CreateNewConnection())
             {
-                using (
-                    ISession session = connection.CreateSession(transactionSettings.IsTransactional,
-                                                                AcknowledgeMode.AutoAcknowledge))
-                {
-                    SessionFactory.SetSession(session);
-
-                    using (IMessageConsumer consumer = createConsumer(session))
-                    {
-                        while (!cancellationToken.IsCancellationRequested)
-                        {
-                            var result = new ReceiveResult();
-
-                            try
-                            {
-                                Run(consumer, session, result);
-                            }
-                            catch (Exception ex)
-                            {
-                                Logger.Error("Error retrieving message.", ex);
-
-                                result.Exception = ex;
-                            }
-                            finally
-                            {
-                                endProcessMessage(result.MessageId, result.Exception);
-                                backOff.Wait(() => result.MessageId == null);
-                            }
-                        }
-                    }
-                }
+                Receive(cancellationToken, connection);
             }
         }
 
-        protected abstract void Run(IMessageConsumer consumer, ISession session, ReceiveResult result);
+        protected abstract void Receive(CancellationToken token, IConnection connection);
 
         protected bool ProcessMessage(IMessage message)
         {
@@ -210,12 +168,6 @@
             }
 
             return result;
-        }
-
-        protected class ReceiveResult
-        {
-            public Exception Exception { get; set; }
-            public string MessageId { get; set; }
         }
     }
 }

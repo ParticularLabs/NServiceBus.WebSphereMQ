@@ -1,45 +1,57 @@
 ﻿namespace NServiceBus.Transports.WebSphereMQ.Receivers
 {
     using System;
+    using System.Threading;
     using IBM.XMS;
+    using Utils;
 
     public class LocalTransactionMessageReceiver : MessageReceiver
     {
-        protected override void Run(IMessageConsumer consumer, ISession session, ReceiveResult result)
+        protected override void Receive(CancellationToken token, IConnection connection)
         {
-            IMessage message = consumer.ReceiveNoWait();
+            var backOff = new BackOff(MaximumDelay);
 
-            if (message == null)
+            using (ISession session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
             {
-                return;
-            }
+                CurrentSessions.SetSession(session);
 
-            result.MessageId = message.JMSMessageID;
+                using (IMessageConsumer consumer = createConsumer(session))
+                {
+                    while (!token.IsCancellationRequested)
+                    {
+                        IMessage message = consumer.ReceiveNoWait();
 
-            bool success = false;
-            Exception exceptionRaised = null;
+                        if (message != null)
+                        {
+                            Exception exception = null;
+                            try
+                            {
+                                if (ProcessMessage(message))
+                                {
+                                    session.Commit();
+                                }
+                                else
+                                {
+                                    session.Rollback();
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Error("Error processing message.", ex);
 
-            try
-            {
-                success = ProcessMessage(message);
-            }
-            catch (Exception ex)
-            {
-                exceptionRaised = ex;
-            }
+                                session.Rollback();
 
-            if (success)
-            {
-                session.Commit();
-            }
-            else
-            {
-                session.Rollback();
-            }
+                                exception = ex;
+                            }
+                            finally
+                            {
+                                endProcessMessage(message.JMSMessageID, exception);
+                            }
+                        }
 
-            if (exceptionRaised != null)
-            {
-                throw exceptionRaised;
+                        backOff.Wait(() => message == null);
+                    }
+                }
             }
         }
     }
