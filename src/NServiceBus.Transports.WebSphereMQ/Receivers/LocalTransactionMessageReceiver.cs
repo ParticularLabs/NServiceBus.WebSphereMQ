@@ -3,23 +3,30 @@
     using System;
     using System.Threading;
     using IBM.XMS;
-    using Utils;
 
     public class LocalTransactionMessageReceiver : MessageReceiver
     {
+        private IMessageConsumer consumer;
+
         protected override void Receive(CancellationToken token, IConnection connection)
         {
-            var backOff = new BackOff(MaximumDelay);
-
             using (ISession session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
             {
                 CurrentSessions.SetSession(session);
 
-                using (IMessageConsumer consumer = createConsumer(session))
+                token.Register(() =>
+                {
+                    if (consumer != null)
+                    {
+                        consumer.Close();
+                    }
+                });
+
+                using (consumer = createConsumer(session))
                 {
                     while (!token.IsCancellationRequested)
                     {
-                        IMessage message = consumer.ReceiveNoWait();
+                        IMessage message = consumer.Receive();
 
                         if (message != null)
                         {
@@ -48,8 +55,6 @@
                                 endProcessMessage(message.JMSMessageID, exception);
                             }
                         }
-
-                        backOff.Wait(() => message == null);
                     }
                 }
             }

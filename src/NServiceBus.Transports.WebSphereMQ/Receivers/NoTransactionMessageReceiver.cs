@@ -3,23 +3,28 @@
     using System;
     using System.Threading;
     using IBM.XMS;
-    using Utils;
 
     public class NoTransactionMessageReceiver : MessageReceiver
     {
+        IMessageConsumer consumer;
+
         protected override void Receive(CancellationToken token, IConnection connection)
         {
-            var backOff = new BackOff(MaximumDelay);
-
+            token.Register(() =>
+                {
+                    if (consumer != null)
+                    {
+                        consumer.Close();
+                    }
+                });
+            
             while (!token.IsCancellationRequested)
             {
-                IMessage message;
-
                 using (ISession session = connection.CreateSession(false, AcknowledgeMode.AutoAcknowledge))
                 {
-                    using (IMessageConsumer consumer = createConsumer(session))
+                    using (consumer = createConsumer(session))
                     {
-                        message = consumer.ReceiveNoWait();
+                        IMessage message = consumer.Receive();
 
                         if (message != null)
                         {
@@ -42,8 +47,6 @@
                         }
                     }
                 }
-
-                backOff.Wait(() => message == null);
             }
         }
     }

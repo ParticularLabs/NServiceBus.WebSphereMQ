@@ -1,7 +1,10 @@
 ﻿namespace NServiceBus.Transports.WebSphereMQ.Tests
 {
     using System;
+    using System.Collections.Generic;
     using System.Threading;
+    using System.Threading.Tasks;
+    using System.Threading.Tasks.Schedulers;
     using System.Transactions;
     using IBM.XMS;
     using NUnit.Framework;
@@ -50,45 +53,65 @@
         }
 
         [Test]
-        public void ReceiveSend2()
+        public void ReceiveSend2Multi()
         {
-            CreateInitialMessage();
+            List<Task> tasks = new List<Task>();
+            CancellationTokenSource source = new CancellationTokenSource();
+            var mtaTaskScheduler = new MTATaskScheduler(30, "dsfsd");
 
-            IMessage message;
+            for (int i = 0; i < 30; i++)
+            {
+                tasks.Add(
+                Task.Factory.StartNew(()=>ReceiveSend2(source.Token), CancellationToken.None, TaskCreationOptions.None, mtaTaskScheduler));
+            }
+
+            Thread.Sleep(3000);
+            source.Cancel();
+
+            Task.WaitAll(tasks.ToArray());
+
+        }
+
+        [Test]
+        public void ReceiveSend2(CancellationToken token)
+        {
+            //CreateInitialMessage();
+            IMessageConsumer consumer = null;
+
+            token.Register(() =>
+                {
+                    if (consumer != null)
+                    {
+                        Console.Out.WriteLine("Stopping consumer...");
+                        consumer.Close();
+                        Console.Out.WriteLine("Consumer stopped");
+
+                    }
+                });
+
             using (var connection = CreateConnection())
             {
                 using (ISession session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
                 {
-                    using (IMessageConsumer consumer = session.CreateConsumer(session.CreateQueue("MyClient")))
+                    using (consumer = session.CreateConsumer(session.CreateQueue("PerformanceTest")))
                     {
-                        message = consumer.ReceiveNoWait();
+                        Console.Out.WriteLine("Receiving...");
+                        IMessage message = consumer.Receive();
                         if (message == null)
                         {
                             Console.Out.WriteLine("No Message!");
                             return;
                         }
-
                     }
 
                     session.Commit();
-
-                    using (var scope = new TransactionScope(TransactionScopeOption.Required))
-                    {
-                        using (var producer = session.CreateProducer(session.CreateQueue("audit")))
-                        {
-
-                            //Transaction.Current.
-                            //var mqMessage = session.CreateTextMessage("Hello john");
-
-                            producer.Send(message);
-                        }
-                        scope.Complete();
-                    }
-
                 }
             }
 
+            Console.Out.WriteLine("All done");
         }
+
+
         private static void CreateInitialMessage()
         {
             using (var connection = CreateConnection())
