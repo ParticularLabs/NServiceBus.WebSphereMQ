@@ -94,6 +94,7 @@
             {
                 if (!hasExistingSession)
                 {
+                    session.Close();
                     session.Dispose();
                 }
             }
