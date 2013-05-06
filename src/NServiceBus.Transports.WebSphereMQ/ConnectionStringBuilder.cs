@@ -2,9 +2,9 @@
 {
     using System.Data.Common;
 
-    class WebSphereMqConnectionStringBuilder : DbConnectionStringBuilder
+    class ConnectionStringBuilder : DbConnectionStringBuilder
     {
-        public WebSphereMqConnectionStringBuilder(string connectionString)
+        public ConnectionStringBuilder(string connectionString)
         {
             ConnectionString = connectionString;
         }

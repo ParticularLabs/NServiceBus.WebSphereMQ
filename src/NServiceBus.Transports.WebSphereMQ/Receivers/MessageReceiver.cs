@@ -1,4 +1,4 @@
-﻿namespace NServiceBus.Transports.WebSphereMQ
+﻿namespace NServiceBus.Transports.WebSphereMQ.Receivers
 {
     using System;
     using System.Collections.Generic;
@@ -12,38 +12,28 @@
     using Logging;
     using Serializers.Json;
     using Unicast.Transport;
-    using Utils;
 
-    public class MessageReceiver
+    public abstract class MessageReceiver : IMessageReceiver
     {
-        private const int MaximumDelay = 1000;
+        protected const int MaximumDelay = 1000;
         private static readonly JsonMessageSerializer Serializer = new JsonMessageSerializer(null);
-        private static readonly ILog Logger = LogManager.GetLogger(typeof (WebSphereMqDequeueStrategy));
+        protected static readonly ILog Logger = LogManager.GetLogger(typeof (DequeueStrategy));
         private readonly CircuitBreaker circuitBreaker = new CircuitBreaker(100, TimeSpan.FromSeconds(30));
-        private readonly WebSphereMqConnectionFactory factory;
-        private readonly WebSphereMqMessageSender messageSender;
         private readonly CancellationTokenSource tokenSource = new CancellationTokenSource();
-        private IConnection connection;
-        private Func<ISession, IMessageConsumer> createConsumer;
-        private Action<string, Exception> endProcessMessage;
+        protected Func<ISession, IMessageConsumer> createConsumer;
+        protected Action<string, Exception> endProcessMessage;
         private Address endpointAddress;
         private DateTime minimumJmsDate = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         private MTATaskScheduler scheduler;
-        private TransactionSettings settings;
-        private TransactionOptions transactionOptions;
+        protected TransactionOptions transactionOptions;
         private Func<TransportMessage, bool> tryProcessMessage;
-
-        public MessageReceiver(WebSphereMqConnectionFactory factory, WebSphereMqMessageSender messageSender)
-        {
-            this.factory = factory;
-            this.messageSender = messageSender;
-        }
+        public CurrentSessions CurrentSessions { get; set; }
+        public ConnectionFactory ConnectionFactory { get; set; }
 
         public void Init(Address address, TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
                          Action<string, Exception> endProcessMessage, Func<ISession, IMessageConsumer> createConsumer)
         {
             endpointAddress = address;
-            this.settings = settings;
             this.tryProcessMessage = tryProcessMessage;
             this.endProcessMessage = endProcessMessage;
             this.createConsumer = createConsumer;
@@ -63,8 +53,6 @@
                                              String.Format("MessageReceiver Worker Thread for [{0}]",
                                                            endpointAddress));
 
-            connection = factory.CreateConnection();
-
             for (int i = 0; i < maximumConcurrencyLevel; i++)
             {
                 StartConsumer();
@@ -77,8 +65,10 @@
         public void Stop()
         {
             Logger.InfoFormat("Stopping MessageReceiver for [{0}].", endpointAddress);
+
             tokenSource.Cancel();
             scheduler.Dispose();
+
             Logger.InfoFormat("MessageReceiver for [{0}] stopped.", endpointAddress);
         }
 
@@ -92,6 +82,8 @@
                     {
                         t.Exception.Handle(ex =>
                             {
+                                Logger.Error("Error retrieving message.", ex);
+
                                 circuitBreaker.Execute(
                                     () =>
                                     Configure.Instance.RaiseCriticalError(
@@ -107,112 +99,16 @@
         private void Action(object obj)
         {
             var cancellationToken = (CancellationToken) obj;
-            var backOff = new BackOff(MaximumDelay);
 
-            while (!cancellationToken.IsCancellationRequested)
+            using (IConnection connection = ConnectionFactory.CreateNewConnection())
             {
-                var result = new ReceiveResult();
-
-                try
-                {
-                    if (settings.IsTransactional)
-                    {
-                        if (!settings.DontUseDistributedTransactions)
-                        {
-                            RunInDistributedTransaction(result);
-                            continue;
-                        }
-
-                        RunInLocalTransaction(result);
-                        continue;
-                    }
-
-                    RunInNoTransaction(result);
-                }
-                catch (Exception ex)
-                {
-                    result.Exception = ex;
-                }
-                finally
-                {
-                    endProcessMessage(result.MessageId, result.Exception);
-                }
-
-                backOff.Wait(() => result.MessageId == null);
+                Receive(cancellationToken, connection);
             }
         }
 
-        private void RunInNoTransaction(ReceiveResult result)
-        {
-            using (ISession session = connection.CreateSession(false, AcknowledgeMode.DupsOkAcknowledge))
-            {
-                using (IMessageConsumer consumer = createConsumer(session))
-                {
-                    IMessage message = consumer.ReceiveNoWait();
-                    if (message == null)
-                    {
-                        return;
-                    }
+        protected abstract void Receive(CancellationToken token, IConnection connection);
 
-                    result.MessageId = message.JMSMessageID;
-
-                    ProcessMessage(message);
-                }
-            }
-        }
-
-        private void RunInLocalTransaction(ReceiveResult result)
-        {
-            using (ISession session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
-            {
-                messageSender.SetSession(session);
-
-                using (IMessageConsumer consumer = createConsumer(session))
-                {
-                    IMessage message = consumer.ReceiveNoWait();
-
-                    if (message == null)
-                    {
-                        return;
-                    }
-
-                    result.MessageId = message.JMSMessageID;
-
-                    if (ProcessMessage(message))
-                    {
-                        session.Commit();
-                    }
-                }
-            }
-        }
-
-        private void RunInDistributedTransaction(ReceiveResult result)
-        {
-            using (var scope = new TransactionScope(TransactionScopeOption.Required, transactionOptions))
-            using (ISession session = connection.CreateSession(true, AcknowledgeMode.AutoAcknowledge))
-            {
-                messageSender.SetSession(session);
-
-                using (IMessageConsumer consumer = createConsumer(session))
-                {
-                    IMessage message = consumer.ReceiveNoWait();
-
-                    if (message == null)
-                    {
-                        return;
-                    }
-
-                    result.MessageId = message.JMSMessageID;
-
-                    if (ProcessMessage(message))
-                    {
-                        scope.Complete();
-                    }
-                }
-            }
-        }
-
-        private bool ProcessMessage(IMessage message)
+        protected bool ProcessMessage(IMessage message)
         {
             TransportMessage transportMessage;
             try
@@ -272,12 +168,6 @@
             }
 
             return result;
-        }
-
-        private class ReceiveResult
-        {
-            public Exception Exception { get; set; }
-            public string MessageId { get; set; }
         }
     }
 }

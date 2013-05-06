@@ -5,13 +5,14 @@
     using IBM.WMQ;
     using IBM.WMQ.PCF;
     using Logging;
+    using Receivers;
     using Unicast.Transport;
     using MQC = IBM.XMS.MQC;
 
-    public class WebSphereMqDequeueStrategy : IDequeueMessages
+    public class DequeueStrategy : IDequeueMessages
     {
-        private readonly WebSphereMqSubscriptionsManager webSphereMqSubscriptionsManager;
-        private readonly MessageReceiver messageReceiver;
+        private readonly SubscriptionsManager subscriptionsManager;
+        private readonly IMessageReceiver messageReceiver;
 
         /// <summary>
         ///     Purges the queue on startup.
@@ -23,9 +24,9 @@
         /// </summary>
         public WebSphereMqSettings Settings { get; set; }
 
-        public WebSphereMqDequeueStrategy(WebSphereMqSubscriptionsManager webSphereMqSubscriptionsManager, MessageReceiver messageReceiver)
+        public DequeueStrategy(SubscriptionsManager subscriptionsManager, IMessageReceiver messageReceiver)
         {
-            this.webSphereMqSubscriptionsManager = webSphereMqSubscriptionsManager;
+            this.subscriptionsManager = subscriptionsManager;
             this.messageReceiver = messageReceiver;
         }
 
@@ -36,7 +37,7 @@
 
             if (address == Address.Local)
             {
-                webSphereMqSubscriptionsManager.Init(settings, tryProcessMessage, endProcessMessage);
+                subscriptionsManager.Init(settings, tryProcessMessage, endProcessMessage);
             }
 
             messageReceiver.Init(address, settings, tryProcessMessage, endProcessMessage, session => session.CreateConsumer(session.CreateQueue(endpointAddress.Queue)));
@@ -53,7 +54,7 @@
 
             if (endpointAddress == Address.Local)
             {
-                webSphereMqSubscriptionsManager.Start(1);
+                subscriptionsManager.Start(1);
             }
         }
 
@@ -61,7 +62,7 @@
         {
             if (endpointAddress == Address.Local)
             {
-                webSphereMqSubscriptionsManager.Stop();
+                subscriptionsManager.Stop();
             }
 
             messageReceiver.Stop();
@@ -95,7 +96,7 @@
         }
 
 
-        static readonly ILog Logger = LogManager.GetLogger(typeof(WebSphereMqDequeueStrategy));
+        static readonly ILog Logger = LogManager.GetLogger(typeof(DequeueStrategy));
         Address endpointAddress;
     }
 }

@@ -7,11 +7,12 @@
     using IBM.XMS;
     using Logging;
     using ObjectBuilder;
+    using Receivers;
     using Unicast.Transport;
 
-    public class WebSphereMqSubscriptionsManager : IManageSubscriptions
+    public class SubscriptionsManager : IManageSubscriptions
     {
-        private readonly WebSphereMqConnectionFactory factory;
+        private readonly ConnectionFactory factory;
 
         private readonly BlockingCollection<Tuple<Type, Address>> events =
             new BlockingCollection<Tuple<Type, Address>>();
@@ -22,11 +23,11 @@
         private Thread startSubscriptionThread;
         private TransactionSettings settings;
         private Func<TransportMessage, bool> tryProcessMessage;
-        static readonly ILog Logger = LogManager.GetLogger(typeof(WebSphereMqSubscriptionsManager));
+        static readonly ILog Logger = LogManager.GetLogger(typeof(SubscriptionsManager));
 
         public IBuilder Builder { get; set; }
 
-        public WebSphereMqSubscriptionsManager(WebSphereMqConnectionFactory factory)
+        public SubscriptionsManager(ConnectionFactory factory)
         {
             this.factory = factory;
         }
@@ -51,8 +52,8 @@
             consumerSatellite.Stop();
             satellites.Remove(consumerSatellite);
 
-            var connection = factory.CreateConnection();
-            using (ISession session = connection.CreateSession(false, AcknowledgeMode.DupsOkAcknowledge))
+            var connection = factory.GetPooledConnection();
+            using (ISession session = connection.CreateSession(false, AcknowledgeMode.AutoAcknowledge))
             {
                 session.Unsubscribe(eventType.FullName);
             }
@@ -72,7 +73,7 @@
                 {
                     foreach (var tuple in events.GetConsumingEnumerable())
                     {
-                        var messageReceiver = Builder.Build<MessageReceiver>();
+                        var messageReceiver = Builder.Build<IMessageReceiver>();
                         Address address =
                             Address.Parse(String.Format("topic://{0}/EVENTS/#/{1}/#", tuple.Item2.Queue,
                                                         tuple.Item1.FullName));
@@ -107,9 +108,9 @@
         {
             private readonly Address address;
             private readonly string eventType;
-            private readonly MessageReceiver receiver;
+            private readonly IMessageReceiver receiver;
 
-            public EventConsumerSatellite(MessageReceiver receiver, Address address, string eventType)
+            public EventConsumerSatellite(IMessageReceiver receiver, Address address, string eventType)
             {
                 this.receiver = receiver;
                 this.eventType = eventType;

@@ -4,11 +4,11 @@
     using System.Collections.Generic;
 
 
-    public class WebSphereMqMessagePublisher : IPublishMessages
+    public class MessagePublisher : IPublishMessages
     {
         private readonly ISendMessages messageSender;
 
-        public WebSphereMqMessagePublisher(ISendMessages messageSender)
+        public MessagePublisher(ISendMessages messageSender)
         {
             this.messageSender = messageSender;
         }

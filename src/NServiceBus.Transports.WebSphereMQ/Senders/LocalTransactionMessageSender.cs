@@ -1,56 +1,34 @@
-﻿namespace NServiceBus.Transports.WebSphereMQ
+﻿namespace NServiceBus.Transports.WebSphereMQ.Senders
 {
     using System;
     using System.Linq;
-    using System.Threading;
     using System.Transactions;
     using IBM.XMS;
     using Logging;
     using Serializers.Json;
-    using Settings;
 
-
-    public class WebSphereMqMessageSender : ISendMessages
+    public class LocalTransactionMessageSender : ISendMessages
     {
-        private readonly WebSphereMqConnectionFactory factory;
-        private readonly bool transactionsEnabled;
-        private readonly ThreadLocal<ISession> currentSession = new ThreadLocal<ISession>();
+        private readonly ConnectionFactory connectionFactory;
         private static readonly JsonMessageSerializer Serializer = new JsonMessageSerializer(null);
-        static readonly ILog Logger = LogManager.GetLogger(typeof(WebSphereMqMessageSender));
+        static readonly ILog Logger = LogManager.GetLogger(typeof(DistributedTransactionMessageSender));
 
-        public WebSphereMqMessageSender(WebSphereMqConnectionFactory factory)
+        public LocalTransactionMessageSender(ConnectionFactory connectionFactory)
         {
-            this.factory = factory;
-            transactionsEnabled = SettingsHolder.Get<bool>("Transactions.Enabled");
+            this.connectionFactory = connectionFactory;
         }
 
-        /// <summary>
-        ///     Sets the native session.
-        /// </summary>
-        /// <param name="session">
-        ///     Native <see cref="ISession" />.
-        /// </param>
-        public void SetSession(ISession session)
-        {
-            currentSession.Value = session;
-        }
+        public CurrentSessions CurrentSessions { get; set; }
 
         public void Send(TransportMessage message, Address address)
         {
-            var connection = factory.CreateConnection();
+            bool hasExistingSession = true;
+            ISession session = CurrentSessions.GetSession();
 
-            ISession session;
-
-            if (currentSession.IsValueCreated)
+            if (session == null)
             {
-                session = currentSession.Value;
-            }
-            else
-            {
-                session = connection.CreateSession(transactionsEnabled,
-                                                   transactionsEnabled
-                                                       ? AcknowledgeMode.AutoAcknowledge
-                                                       : AcknowledgeMode.DupsOkAcknowledge);
+                hasExistingSession = false;
+                session = connectionFactory.GetPooledConnection().CreateSession(false, AcknowledgeMode.AutoAcknowledge);
             }
 
             try
@@ -81,7 +59,7 @@
 
                     if (message.TimeToBeReceived < TimeSpan.MaxValue)
                     {
-                        producer.TimeToLive = (long) message.TimeToBeReceived.TotalMilliseconds;
+                        producer.TimeToLive = (long)message.TimeToBeReceived.TotalMilliseconds;
                     }
 
                     mqMessage.SetStringProperty(Constants.NSB_HEADERS, Serializer.SerializeObject(message.Headers));
@@ -90,7 +68,7 @@
                     {
                         mqMessage.JMSType =
                             message.Headers[Headers.EnclosedMessageTypes]
-                                .Split(new[] {','}, StringSplitOptions.RemoveEmptyEntries)
+                                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
                                 .FirstOrDefault();
                     }
 
@@ -103,24 +81,19 @@
                     {
                         mqMessage.JMSReplyTo = isTopic ? session.CreateTopic(message.ReplyToAddress.Queue) : session.CreateQueue(message.ReplyToAddress.Queue);
                     }
-
-                    producer.Send(mqMessage);
-                    Logger.DebugFormat(isTopic ? "Message published to {0}." : "Message sent to {0}.", address.Queue);
-
-                    if (!currentSession.IsValueCreated)
+                    
+                    using (new TransactionScope(TransactionScopeOption.Suppress))
                     {
-                        if (transactionsEnabled && Transaction.Current == null)
-                        {
-                            session.Commit();
-                        }
+                        producer.Send(mqMessage);
                     }
+
+                    Logger.DebugFormat(isTopic ? "Message published to {0}." : "Message sent to {0}.", address.Queue);
                 }
             }
             finally
             {
-                if (!currentSession.IsValueCreated)
+                if (!hasExistingSession)
                 {
-                    session.Close();
                     session.Dispose();
                 }
             }
