@@ -1,12 +1,10 @@
 ﻿namespace NServiceBus.Transports.WebSphereMQ.Config
 {
     using Features;
-    using NServiceBus.Config;
     using Receivers;
     using Senders;
     using Settings;
     using Unicast.Queuing.Installers;
-    using Unicast.Subscriptions;
     using WebSphereMQ = NServiceBus.WebSphereMQ;
 
     public class WebSphereMQTransport : ConfigureTransport<WebSphereMQ>, IFeature
@@ -65,9 +63,6 @@
         protected override void InternalConfigure(Configure config, string connectionString)
         {
             Feature.Enable<WebSphereMQTransport>();
-
-            InfrastructureServices.RegisterServiceFor<IAutoSubscriptionStrategy>(
-                typeof (NoConfigRequiredAutoSubscriptionStrategy), DependencyLifecycle.InstancePerCall);
         }
     }
 }

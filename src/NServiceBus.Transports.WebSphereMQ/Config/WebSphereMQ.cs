@@ -2,8 +2,12 @@
 {
     using Transports;
 
-    public class WebSphereMQ : ITransportDefinition
+    public class WebSphereMQ : TransportDefinition
     {
-
+        public WebSphereMQ()
+        {
+            HasNativePubSubSupport = true;
+            HasSupportForCentralizedPubSub = true;
+        }
     }
 }
