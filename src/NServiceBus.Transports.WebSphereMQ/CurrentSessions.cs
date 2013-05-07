@@ -50,9 +50,6 @@
 
             if (disposing)
             {
-                if(sessionsPerThread.IsValueCreated)
-                    sessionsPerThread.Value.Close();
-
                 sessionsPerThread.Dispose();
             }
 
