@@ -56,7 +56,10 @@
                             }
                         }
                     }
+
+                    consumer.Close();
                 }
+
                 session.Close();
             }
         }

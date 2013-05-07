@@ -76,6 +76,7 @@
                         producer.Send(mqMessage);
                     }
 
+                    producer.Close();
                     session.Close();
 
                     Logger.DebugFormat(isTopic ? "Message published to {0}." : "Message sent to {0}.", address.Queue);

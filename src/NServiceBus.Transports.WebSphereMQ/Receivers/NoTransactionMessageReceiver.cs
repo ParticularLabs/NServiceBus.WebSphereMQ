@@ -45,6 +45,8 @@
                                 endProcessMessage(message.JMSMessageID, exception);
                             }
                         }
+
+                        consumer.Close();
                     }
 
                     session.Close();

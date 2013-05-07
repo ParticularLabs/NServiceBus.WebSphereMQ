@@ -58,7 +58,10 @@
 
                         backOff.Wait(() => message == null);
                     }
+
+                    consumer.Close();
                 }
+
                 session.Close();
             }
         }

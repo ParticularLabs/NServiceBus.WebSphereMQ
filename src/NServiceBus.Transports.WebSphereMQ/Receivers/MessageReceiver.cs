@@ -103,6 +103,9 @@
             using (IConnection connection = ConnectionFactory.CreateNewConnection())
             {
                 Receive(cancellationToken, connection);
+
+                connection.Stop();
+                connection.Close();
             }
         }
 
