@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <metadata xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+    <id>NServiceBus.WebSphereMQ</id>
+    <version>0.0.0</version>
+    <authors>NServiceBus Ltd</authors>
+    <owners>Udi Dahan, Andreas Ohlund, Jonathan Matheus, John Simons et al</owners>
+    <licenseUrl>http://nservicebus.com/license.aspx</licenseUrl>
+    <projectUrl>http://nservicebus.com/</projectUrl>
+    <iconUrl>http://a2.twimg.com/profile_images/1203939022/nServiceBus_Twitter_Logo_reasonably_small.png</iconUrl>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <description>The most popular open-source service bus for .net</description>
+    <releaseNotes>
+    </releaseNotes>
+    <copyright>Copyright (C) NServiceBus 2010-2012</copyright>
+    <tags>nservicebus servicebus msmq cqrs publish subscribe</tags>
+    <dependencies>
+    </dependencies>
+  </metadata>
+  <files>
+   <file src="..\..\src\NServiceBus.Transports.WebSphereMQ\bin\Release\NServiceBus.Transports.WebSphereMQ.*" target="lib\net40" />
+  </files>
+</package>
