@@ -1,13 +1,12 @@
 ﻿namespace NServiceBus.Transports.WebSphereMQ.Config
 {
-    using Features;
     using Receivers;
     using Senders;
     using Settings;
     using Unicast.Queuing.Installers;
     using WebSphereMQ = NServiceBus.WebSphereMQ;
 
-    public class WebSphereMQTransport : ConfigureTransport<WebSphereMQ>, IFeature
+    public class WebSphereMQTransport : ConfigureTransport<WebSphereMQ>
     {
         protected override string ExampleConnectionStringForErrorMessage
         {
@@ -60,9 +59,9 @@
             EndpointInputQueueCreator.Enabled = true;
         }
 
-        protected override void InternalConfigure(Configure config, string connectionString)
+        protected override void InternalConfigure(Configure config)
         {
-            Feature.Enable<WebSphereMQTransport>();
+            Enable<WebSphereMQTransport>();
         }
     }
 }
