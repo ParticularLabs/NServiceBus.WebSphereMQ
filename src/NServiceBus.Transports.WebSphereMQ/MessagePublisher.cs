@@ -17,7 +17,7 @@
         {
             var eventTypeTopics = String.Join("/", eventTypes);
 
-            messageSender.Send(message, Address.Parse(String.Format("topic://{0}/EVENTS/{1}", Address.Local.Queue, eventTypeTopics)));
+            messageSender.Send(message, Address.Parse(String.Format("topic://{0}/EVENTS/{1}", WebSphereMqAddress.GetQueueName(Address.Local), eventTypeTopics)));
 
             return true;
         }

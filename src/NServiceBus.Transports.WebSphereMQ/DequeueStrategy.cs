@@ -33,14 +33,16 @@
         public void Init(Address address, TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
                          Action<string, Exception> endProcessMessage)
         {
-            endpointAddress = address;
+            isTheMainTransport = address == Address.Local;
+
+            endpointAddress = new WebSphereMqAddress(address);
 
             if (address == Address.Local)
             {
                 subscriptionsManager.Init(settings, tryProcessMessage, endProcessMessage);
             }
 
-            messageReceiver.Init(address, settings, tryProcessMessage, endProcessMessage, session => session.CreateConsumer(session.CreateQueue(endpointAddress.Queue)));
+            messageReceiver.Init(address, settings, tryProcessMessage, endProcessMessage, session => session.CreateConsumer(session.CreateQueue(endpointAddress.QueueName)));
         }
 
         public void Start(int maximumConcurrencyLevel)
@@ -52,7 +54,7 @@
 
             messageReceiver.Start(maximumConcurrencyLevel);
 
-            if (endpointAddress == Address.Local)
+            if (isTheMainTransport)
             {
                 subscriptionsManager.Start(1);
             }
@@ -60,7 +62,7 @@
 
         public void Stop()
         {
-            if (endpointAddress == Address.Local)
+            if (isTheMainTransport)
             {
                 subscriptionsManager.Stop();
             }
@@ -82,7 +84,7 @@
             {
                 var agent = new PCFMessageAgent(queueManager);
                 var request = new PCFMessage(CMQCFC.MQCMD_CLEAR_Q);
-                request.AddParameter(MQC.MQCA_Q_NAME, endpointAddress.Queue);
+                request.AddParameter(MQC.MQCA_Q_NAME, endpointAddress.QueueName);
 
                 try
                 {
@@ -90,13 +92,14 @@
                 }
                 catch (PCFException ex)
                 {
-                    Logger.Warn(string.Format("Could not purge queue ({0}) at startup", endpointAddress.Queue), ex);
+                    Logger.Warn(string.Format("Could not purge queue ({0}) at startup", endpointAddress.QueueName), ex);
                 }
             }
         }
 
 
         static readonly ILog Logger = LogManager.GetLogger(typeof(DequeueStrategy));
-        Address endpointAddress;
+        WebSphereMqAddress endpointAddress;
+        bool isTheMainTransport;
     }
 }

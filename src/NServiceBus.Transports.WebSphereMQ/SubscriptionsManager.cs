@@ -76,7 +76,7 @@
                     {
                         var messageReceiver = Builder.Build<IMessageReceiver>();
                         Address address =
-                            Address.Parse(String.Format("topic://{0}/EVENTS/#/{1}/#", tuple.Item2.Queue,
+                            Address.Parse(String.Format("topic://{0}/EVENTS/#/{1}/#", WebSphereMqAddress.GetQueueName(tuple.Item2),
                                                         tuple.Item1.FullName));
                         var consumerSatellite = new EventConsumerSatellite(messageReceiver, address,
                                                                            tuple.Item1.FullName);
@@ -121,7 +121,7 @@
 
             public IMessageConsumer CreateConsumer(ISession session)
             {
-                return session.CreateDurableSubscriber(session.CreateTopic(address.Queue), eventType);
+                return session.CreateDurableSubscriber(session.CreateTopic(WebSphereMqAddress.GetQueueName(address)), eventType);
             }
 
             public Address InputAddress

@@ -15,6 +15,8 @@
 
         public void CreateQueueIfNecessary(Address address, string account)
         {
+            var queueName = WebSphereMqAddress.GetQueueName(address);
+
             var properties = new Hashtable
                 {
                     {MQC.HOST_NAME_PROPERTY, Settings.Hostname},
@@ -27,7 +29,7 @@
             {
                 var agent = new PCFMessageAgent(queueManager);
                 var request = new PCFMessage(CMQCFC.MQCMD_CREATE_Q);
-                request.AddParameter(MQC.MQCA_Q_NAME, address.Queue);
+                request.AddParameter(MQC.MQCA_Q_NAME, queueName);
                 request.AddParameter(MQC.MQIA_Q_TYPE, MQC.MQQT_LOCAL);
 
                 try
@@ -38,7 +40,7 @@
                 {
                     if (ex.ReasonCode == PCFException.MQRCCF_CFST_STRING_LENGTH_ERR)
                     {
-                        throw new ArgumentException(String.Format("Queue name too long:{0}", address.Queue));
+                        throw new ArgumentException(String.Format("Queue name too long:{0}", queueName));
                     }
 
                     if (ex.ReasonCode != PCFException.MQRCCF_OBJECT_ALREADY_EXISTS)
