@@ -1,6 +1,7 @@
 ﻿namespace NServiceBus.Transports.WebSphereMQ
 {
     using System;
+    using System.Collections.Generic;
     using System.Security.Cryptography;
     using System.Text;
     using IBM.XMS;
@@ -24,10 +25,7 @@
         {
             get
             {
-                if (queueName == null)
-                    queueName = GenerateQueueName(address);
-
-                return queueName;
+                return  GenerateQueueName(address);;
             }
         }
 
@@ -50,6 +48,9 @@
         {
             var queue = address.Queue;
 
+            if (queueNames.ContainsKey(queue))
+                return queueNames[queue];
+
             if (queue.Length <= 48)
                 return queue;
 
@@ -58,7 +59,9 @@
             var shortenedQueueName = queue.Substring(0, 48 - queueHash.Length - 1) + "." + queueHash;
             
             Logger.WarnFormat("Queue name was longer than the 48 char limit imposed by WMQ. Name changed from: {0} to {1}",queue,shortenedQueueName);
-            
+
+            queueNames[queue] = shortenedQueueName;
+
             return shortenedQueueName;
         }
 
@@ -76,7 +79,7 @@
             }
         }
 
-        string queueName;
+        static readonly IDictionary<string,string> queueNames = new Dictionary<string,string>();
         static readonly ILog Logger = LogManager.GetLogger(typeof(WebSphereMqAddress));
       
     }
