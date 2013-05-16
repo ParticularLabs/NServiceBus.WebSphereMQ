@@ -7,6 +7,8 @@
 
     public abstract class MessageSender : ISendMessages
     {
+        public ConnectionFactory ConnectionFactory { get; set; }
+       
         public void Send(TransportMessage message, Address address)
         {
             messageToSend = message;
@@ -15,6 +17,11 @@
         }
 
         protected abstract void InternalSend();
+
+        protected ISession CreateSession()
+        {
+            return ConnectionFactory.GetPooledConnection().CreateSession(false, AcknowledgeMode.AutoAcknowledge);
+        }
 
         protected IBytesMessage CreateNativeMessage(ISession session, IMessageProducer producer)
         {
@@ -70,8 +77,6 @@
 
         TransportMessage messageToSend;
 
-
         static readonly JsonMessageSerializer Serializer = new JsonMessageSerializer(null);
-
     }
 }

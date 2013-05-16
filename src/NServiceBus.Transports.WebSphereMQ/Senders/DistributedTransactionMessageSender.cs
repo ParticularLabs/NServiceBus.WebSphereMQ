@@ -1,16 +1,9 @@
 ﻿namespace NServiceBus.Transports.WebSphereMQ.Senders
 {
     using System.Transactions;
-    using IBM.XMS;
 
     public class DistributedTransactionMessageSender : MessageSender
     {
-
-        public DistributedTransactionMessageSender(ConnectionFactory connectionFactory)
-        {
-            this.connectionFactory = connectionFactory;
-        }
-
         public CurrentSessions CurrentSessions { get; set; }
 
         protected override void InternalSend()
@@ -21,7 +14,7 @@
             if (session == null)
             {
                 hasExistingSession = false;
-                session = connectionFactory.GetPooledConnection().CreateSession(false, AcknowledgeMode.AutoAcknowledge);
+                session = CreateSession();
             }
 
             try
@@ -56,6 +49,6 @@
             }
         }
 
-        readonly ConnectionFactory connectionFactory;
+        
     }
 }

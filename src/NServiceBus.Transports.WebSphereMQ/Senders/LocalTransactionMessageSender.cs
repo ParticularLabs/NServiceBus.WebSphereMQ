@@ -5,11 +5,6 @@
 
     public class LocalTransactionMessageSender : MessageSender
     {
-        public LocalTransactionMessageSender(ConnectionFactory connectionFactory)
-        {
-            this.connectionFactory = connectionFactory;
-        }
-
         public CurrentSessions CurrentSessions { get; set; }
 
         protected override void InternalSend()
@@ -20,7 +15,7 @@
             if (session == null)
             {
                 hasExistingSession = false;
-                session = connectionFactory.GetPooledConnection().CreateSession(false, AcknowledgeMode.AutoAcknowledge);
+                session = CreateSession();
             }
 
             try
@@ -48,7 +43,5 @@
                 }
             }
         }
-
-        readonly ConnectionFactory connectionFactory;
     }
 }
