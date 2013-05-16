@@ -13,7 +13,7 @@
             get { return "hostname=localhost;queueManager=QM_TEST;"; }
         }
 
-        public void Initialize()
+        public override void Initialize()
         {
             Address.IgnoreMachineName();
 
