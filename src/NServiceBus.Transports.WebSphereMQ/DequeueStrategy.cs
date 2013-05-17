@@ -31,7 +31,7 @@
         }
 
         public void Init(Address address, TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
-                         Action<string, Exception> endProcessMessage)
+                         Action<TransportMessage, Exception> endProcessMessage)
         {
             isTheMainTransport = address == Address.Local;
 

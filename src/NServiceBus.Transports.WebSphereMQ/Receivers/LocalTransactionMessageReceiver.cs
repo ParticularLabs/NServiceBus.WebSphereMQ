@@ -31,9 +31,12 @@
                         if (message != null)
                         {
                             Exception exception = null;
+                            TransportMessage transportMessage = null;
                             try
                             {
-                                if (ProcessMessage(message))
+                                transportMessage = ConvertMessage(message);
+
+                                if (ProcessMessage(transportMessage))
                                 {
                                     session.Commit();
                                 }
@@ -52,7 +55,7 @@
                             }
                             finally
                             {
-                                endProcessMessage(message.JMSMessageID, exception);
+                                endProcessMessage(transportMessage, exception);
                             }
                         }
                     }

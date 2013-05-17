@@ -21,7 +21,7 @@
         private readonly CircuitBreaker circuitBreaker = new CircuitBreaker(100, TimeSpan.FromSeconds(30));
         private readonly CancellationTokenSource tokenSource = new CancellationTokenSource();
         protected Func<ISession, IMessageConsumer> createConsumer;
-        protected Action<string, Exception> endProcessMessage;
+        protected Action<TransportMessage, Exception> endProcessMessage;
         private Address endpointAddress;
         private DateTime minimumJmsDate = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         private MTATaskScheduler scheduler;
@@ -31,7 +31,7 @@
         public ConnectionFactory ConnectionFactory { get; set; }
 
         public void Init(Address address, TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
-                         Action<string, Exception> endProcessMessage, Func<ISession, IMessageConsumer> createConsumer)
+                         Action<TransportMessage, Exception> endProcessMessage, Func<ISession, IMessageConsumer> createConsumer)
         {
             endpointAddress = address;
             this.tryProcessMessage = tryProcessMessage;
@@ -111,29 +111,30 @@
 
         protected abstract void Receive(CancellationToken token, IConnection connection);
 
-        protected bool ProcessMessage(IMessage message)
+
+        protected TransportMessage ConvertMessage(IMessage message)
         {
-            TransportMessage transportMessage;
-            try
+           try
             {
-                transportMessage = ConvertToTransportMessage(message);
+                return ConvertToTransportMessage(message);
             }
             catch (Exception ex)
             {
                 Logger.Error("Error in converting WebSphereMQ message to TransportMessage.", ex);
 
-                //todo DeadLetter the message
-                return true;
+                return new TransportMessage(message.JMSMessageID,null);
             }
-
-            return tryProcessMessage(transportMessage);
+        }
+        protected bool ProcessMessage(TransportMessage message)
+        {
+            return tryProcessMessage(message);
         }
 
         private TransportMessage ConvertToTransportMessage(IMessage message)
         {
-            var result = new TransportMessage
+            var headers = ExtractHeaders(message);
+            var result = new TransportMessage( message.JMSMessageID, headers)
                 {
-                    Id = message.JMSMessageID,
                     CorrelationId = message.JMSCorrelationID,
                     Recoverable = message.JMSDeliveryMode == DeliveryMode.Persistent,
                 };
@@ -163,14 +164,21 @@
                 result.TimeToBeReceived = minimumJmsDate.AddMilliseconds(message.JMSExpiration) - DateTime.UtcNow;
             }
 
-            if (message.PropertyExists(Constants.NSB_HEADERS))
-            {
-                result.Headers =
-                    Serializer.DeserializeObject<Dictionary<string, string>>(
-                        message.GetStringProperty(Constants.NSB_HEADERS));
-            }
+            
 
             return result;
+        }
+
+        static Dictionary<string,string> ExtractHeaders(IMessage message)
+        {
+            if (!message.PropertyExists(Constants.NSB_HEADERS))
+            {
+                return new Dictionary<string, string>();
+            }
+
+            return Serializer.DeserializeObject<Dictionary<string, string>>(
+                        message.GetStringProperty(Constants.NSB_HEADERS));
+
         }
     }
 }

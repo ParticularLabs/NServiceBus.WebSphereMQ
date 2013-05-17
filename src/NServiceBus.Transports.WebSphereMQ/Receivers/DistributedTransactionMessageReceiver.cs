@@ -33,9 +33,13 @@
                                 if (message != null)
                                 {
                                     Exception exception = null;
+                                    TransportMessage transportMessage = null;
+                                    
                                     try
                                     {
-                                        if (ProcessMessage(message))
+                                        transportMessage = ConvertMessage(message);
+
+                                        if (ProcessMessage(transportMessage))
                                         {
                                             scope.Complete();
                                         }
@@ -48,7 +52,7 @@
                                     }
                                     finally
                                     {
-                                        endProcessMessage(message.JMSMessageID, exception);
+                                        endProcessMessage(transportMessage, exception);
                                     }
                                 }
                             }

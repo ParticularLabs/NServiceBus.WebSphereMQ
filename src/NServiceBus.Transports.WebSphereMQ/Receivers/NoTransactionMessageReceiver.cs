@@ -29,10 +29,12 @@
                         if (message != null)
                         {
                             Exception exception = null;
-
+                            TransportMessage transportMessage = null;
                             try
                             {
-                                ProcessMessage(message);
+                                transportMessage = ConvertMessage(message);
+
+                                ProcessMessage(transportMessage);
                             }
                             catch (Exception ex)
                             {
@@ -42,7 +44,7 @@
                             }
                             finally
                             {
-                                endProcessMessage(message.JMSMessageID, exception);
+                                endProcessMessage(transportMessage, exception);
                             }
                         }
 

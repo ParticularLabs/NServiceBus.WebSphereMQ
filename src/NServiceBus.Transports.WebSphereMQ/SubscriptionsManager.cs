@@ -18,7 +18,7 @@
             new BlockingCollection<Tuple<Type, Address>>();
 
         private readonly List<EventConsumerSatellite> satellites = new List<EventConsumerSatellite>();
-        private Action<string, Exception> endProcessMessage;
+        private Action<TransportMessage, Exception> endProcessMessage;
 
         private Thread startSubscriptionThread;
         private TransactionSettings settings;
@@ -61,7 +61,7 @@
         }
 
         public void Init(TransactionSettings settings, Func<TransportMessage, bool> tryProcessMessage,
-                         Action<string, Exception> endProcessMessage)
+                         Action<TransportMessage, Exception> endProcessMessage)
         {
             this.settings = settings;
             this.tryProcessMessage = tryProcessMessage;
