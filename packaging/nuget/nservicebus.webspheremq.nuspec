@@ -1,5 +1,5 @@
-<?xml version="1.0"?>
-<package xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
   <metadata xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
     <id>NServiceBus.WebSphereMQ</id>
     <version>0.0.0</version>
@@ -10,16 +10,15 @@
     <iconUrl>http://a2.twimg.com/profile_images/1203939022/nServiceBus_Twitter_Logo_reasonably_small.png</iconUrl>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
     <description>The most popular open-source service bus for .net</description>
-    <releaseNotes>
-    </releaseNotes>
+    <releaseNotes></releaseNotes>
     <copyright>Copyright (C) NServiceBus 2010-2012</copyright>
     <tags>nservicebus servicebus msmq cqrs publish subscribe</tags>
     <dependencies>
-      <dependency id="NServiceBus.Interfaces" version="0.0.0" />
-      <dependency id="NServiceBus" version="0.0.0" />
+      <dependency id="NServiceBus" version="4.0.0.0-unstable3076" />
+      <dependency id="NServiceBus.Interfaces" version="4.0.0.0-unstable3076" />
     </dependencies>
   </metadata>
-  <files>
-   <file src="..\..\src\NServiceBus.Transports.WebSphereMQ\bin\Release\NServiceBus.Transports.WebSphereMQ.*" target="lib\net40" />
+  <files xmlns="">
+    <file src="..\..\src\NServiceBus.Transports.WebSphereMQ\bin\Release\NServiceBus.Transports.WebSphereMQ.*" target="lib\net40" />
   </files>
 </package>
