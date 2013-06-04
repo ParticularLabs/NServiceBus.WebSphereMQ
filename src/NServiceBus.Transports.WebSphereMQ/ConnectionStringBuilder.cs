@@ -25,6 +25,9 @@
             if (ContainsKey("queueManager"))
                 settings.QueueManager = (string)this["queueManager"];
 
+            if (ContainsKey("maxQueueDepth"))
+                settings.MaxQueueDepth = (int)this["maxQueueDepth"];
+
 
             return settings;
         }

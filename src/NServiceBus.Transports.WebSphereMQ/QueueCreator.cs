@@ -31,6 +31,7 @@
                 var request = new PCFMessage(CMQCFC.MQCMD_CREATE_Q);
                 request.AddParameter(MQC.MQCA_Q_NAME, queueName);
                 request.AddParameter(MQC.MQIA_Q_TYPE, MQC.MQQT_LOCAL);
+                request.AddParameter(MQC.MQIA_MAX_Q_DEPTH, Settings.MaxQueueDepth);
 
                 try
                 {

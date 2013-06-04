@@ -10,7 +10,10 @@
             Channel = "SYSTEM.DEF.SVRCONN";
             Port = XMSC.WMQ_DEFAULT_CLIENT_PORT;
             Hostname = "localhost";
+            MaxQueueDepth = 50000;
         }
+
+        public int MaxQueueDepth { get; set; }
 
         public string QueueManager { get; set; }
 
