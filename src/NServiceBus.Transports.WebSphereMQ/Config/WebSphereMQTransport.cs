@@ -3,7 +3,6 @@
     using Receivers;
     using Senders;
     using Settings;
-    using Unicast.Queuing.Installers;
     using WebSphereMQ = NServiceBus.WebSphereMQ;
 
     public class WebSphereMQTransport : ConfigureTransport<WebSphereMQ>
@@ -55,8 +54,6 @@
             NServiceBus.Configure.Component<DequeueStrategy>(DependencyLifecycle.InstancePerCall)
                        .ConfigureProperty(p => p.PurgeOnStartup, ConfigurePurging.PurgeRequested)
                        .ConfigureProperty(p => p.Settings, settings);
-
-            EndpointInputQueueCreator.Enabled = true;
         }
 
         protected override void InternalConfigure(Configure config)
