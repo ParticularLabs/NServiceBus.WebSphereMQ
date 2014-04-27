@@ -28,6 +28,14 @@
             if (ContainsKey("maxQueueDepth"))
                 settings.MaxQueueDepth = (int)this["maxQueueDepth"];
 
+            if (ContainsKey("sslCipherSpec"))
+                settings.SslCipherSpec = (string)this["sslCipherSpec"];
+
+            if (ContainsKey("sslKeyRepository"))
+                settings.SslKeyRepository = (string)this["sslKeyRepository"];
+
+            if (ContainsKey("sslPeerName"))
+                settings.SslPeerName = (string)this["sslPeerName"];
 
             return settings;
         }

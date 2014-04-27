@@ -4,6 +4,7 @@
     using Senders;
     using Settings;
     using WebSphereMQ = NServiceBus.WebSphereMQ;
+    using System;
 
     public class WebSphereMQTransport : ConfigureTransport<WebSphereMQ>
     {
@@ -15,6 +16,8 @@
         public override void Initialize()
         {
             Address.IgnoreMachineName();
+
+            Environment.SetEnvironmentVariable("AMQ_SSL_ALLOW_DEFAULT_CERT", "true");
 
             var connectionString = SettingsHolder.Get<string>("NServiceBus.Transport.ConnectionString");
             var parser = new ConnectionStringBuilder(connectionString);

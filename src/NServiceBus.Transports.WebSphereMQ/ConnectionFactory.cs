@@ -24,8 +24,11 @@
             connectionFactory.SetStringProperty(XMSC.WMQ_HOST_NAME, settings.Hostname);
             connectionFactory.SetIntProperty(XMSC.WMQ_PORT, settings.Port);
             connectionFactory.SetStringProperty(XMSC.WMQ_CHANNEL, settings.Channel);
-            connectionFactory.SetIntProperty(XMSC.WMQ_CONNECTION_MODE, XMSC.WMQ_CM_CLIENT);
+            connectionFactory.SetIntProperty(XMSC.WMQ_CONNECTION_MODE, XMSC.WMQ_CM_CLIENT_UNMANAGED);
             connectionFactory.SetStringProperty(XMSC.WMQ_QUEUE_MANAGER, settings.QueueManager);
+            connectionFactory.SetStringProperty(XMSC.WMQ_SSL_CIPHER_SPEC, settings.SslCipherSpec);
+            connectionFactory.SetStringProperty(XMSC.WMQ_SSL_KEY_REPOSITORY, settings.SslKeyRepository);
+            connectionFactory.SetStringProperty(XMSC.WMQ_SSL_PEER_NAME, settings.SslPeerName);
         }
 
         ~ConnectionFactory()

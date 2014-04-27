@@ -22,5 +22,11 @@
         public int Port { get; set; }
 
         public string Hostname { get; set; }
+
+        public string SslCipherSpec { get; set; }
+
+        public string SslKeyRepository { get; set; }
+
+        public string SslPeerName { get; set; }
     }
 }

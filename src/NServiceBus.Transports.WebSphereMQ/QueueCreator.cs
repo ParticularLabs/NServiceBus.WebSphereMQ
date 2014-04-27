@@ -21,8 +21,11 @@
                 {
                     {MQC.HOST_NAME_PROPERTY, Settings.Hostname},
                     {MQC.PORT_PROPERTY, Settings.Port},
-                    {MQC.TRANSPORT_PROPERTY, MQC.TRANSPORT_MQSERIES_MANAGED},
-                    {MQC.CHANNEL_PROPERTY, Settings.Channel}
+                    {MQC.TRANSPORT_PROPERTY, MQC.TRANSPORT_MQSERIES},
+                    {MQC.CHANNEL_PROPERTY, Settings.Channel},
+                    {MQC.SSL_CIPHER_SPEC_PROPERTY, Settings.SslCipherSpec},
+                    {MQC.SSL_CERT_STORE_PROPERTY, Settings.SslKeyRepository},
+                    {MQC.SSL_PEER_NAME_PROPERTY, Settings.SslPeerName}
                 };
 
             using (var queueManager = new MQQueueManager(Settings.QueueManager, properties))
